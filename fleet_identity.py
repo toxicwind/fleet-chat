@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fleet_identity.py -- HMAC-SHA256 per-agent message signing for the fleet chat.
+"""fleet_identity.py -- HMAC-SHA256 per-agent message signing for Squawk.
 
 The base fork's --as/--from identity is pure self-assertion: any local process
 can post as any agent, including the leader. This module fixes that with
@@ -422,7 +422,7 @@ def sign_archive_file(path, kd: Path | None = None) -> bool:
 
 
 def _cli() -> int:
-    ap = argparse.ArgumentParser(description="fleet chat identity: keygen / verify / migrate")
+    ap = argparse.ArgumentParser(description="squawk identity: keygen / verify / migrate")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("keygen", help="generate a 256-bit key for an agent id")
     p.add_argument("agent_id")

@@ -1,4 +1,4 @@
-"""fleet_presence.py -- Liveness + gossip-targeting for the fleet chat fork.
+"""fleet_presence.py -- Liveness + gossip-targeting for the Squawk fork.
 
 Paper steals:
   (a) Jelasity, Voulgaris, Guerraoui, Kermarrec, van Steen (2007),
