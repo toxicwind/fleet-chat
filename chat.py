@@ -42,6 +42,7 @@ import fleet_identity
 import fleet_log
 import fleet_presence
 import fleet_roster
+import fleet_stigmergy
 import fleet_time
 import fleet_wait
 import fleet_watch
@@ -527,6 +528,37 @@ def cmd_presence(root: Path, a):
     print("liveness hints, NOT credentials: never use presence for authorization.")
     print("suspect/dead = no heartbeat within 60s/300s; idle and crashed are")
     print("indistinguishable. A fresh heartbeat always refutes suspicion marks.")
+
+
+def cmd_react(root: Path, a):
+    """Deposit a pheromone trace pointing at a message (stigmergic signal).
+
+    Reactions are signals, NOT notifications: nobody is paged; agents that
+    read the field notice. Traces decay with their TTL and are invisible
+    past it.
+    """
+    d = require_channel(root, a.channel)
+    fleet_stigmergy.react(
+        root, a.channel, a.agent, target_seq=a.seq, kind=a.kind,
+        strength=a.strength, ttl_s=a.ttl, note=a.note or "",
+    )
+    print(f"trace deposited on #{a.seq} in '{a.channel}' (kind={a.kind})")
+
+
+def cmd_suggest_role(root: Path, a):
+    """ADVISORY ONLY role suggestion from local claim traces.
+
+    Emergent specialization (Ferrante et al. 2015): the fleet self-balances
+    because agents follow such local readings, not because anyone assigns.
+    This command never enforces, never writes, never orders -- there is no
+    --enforce flag and there never will be.
+    """
+    require_channel(root, a.channel)
+    s = fleet_stigmergy.suggest_role(root, a.channel, a.agent)
+    if s is None:
+        print("(no traces yet -- nothing to suggest; the field is empty)")
+        return
+    print(json.dumps(s, indent=2))
 
 
 def cmd_suspect(root: Path, a):
@@ -1456,6 +1488,27 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--by", required=True, help="agent recording the suspicion")
     s.add_argument("--reason", default="", help="why the peer is suspected")
     s.set_defaults(func=cmd_suspect)
+
+    s = sub.add_parser(
+        "react",
+        help="deposit a pheromone trace on a message (stigmergic signal, not a notification)",
+    )
+    s.add_argument("channel", help="channel holding the message")
+    s.add_argument("--as", dest="agent", required=True, help="reacting agent")
+    s.add_argument("--seq", type=int, required=True, help="target message seq")
+    s.add_argument("--kind", default="signal", help="trace kind (default: signal)")
+    s.add_argument("--strength", type=float, default=1.0, help="pheromone strength")
+    s.add_argument("--ttl", type=float, default=None, help="trace TTL in seconds")
+    s.add_argument("--note", default="", help="free-form label (task types are emergent, not an enum)")
+    s.set_defaults(func=cmd_react)
+
+    s = sub.add_parser(
+        "suggest-role",
+        help="ADVISORY ONLY: suggest a specialization from local claim traces (never enforced)",
+    )
+    s.add_argument("channel", help="channel to read traces from")
+    s.add_argument("--as", dest="agent", required=True, help="agent asking for a suggestion")
+    s.set_defaults(func=cmd_suggest_role)
 
     s = sub.add_parser("keygen", help="mint an HMAC identity key for an agent")
     s.add_argument("agent_id", help="agent id (must match fleet identity rules)")
