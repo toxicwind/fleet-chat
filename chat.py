@@ -35,10 +35,12 @@ from pathlib import Path
 
 from fleet_addr import addressed_wait_filter
 
+import fleet_ephemeral
 import fleet_identity
 import fleet_log
 import fleet_roster
 import fleet_wait
+import fleet_watch
 
 # --- root + small helpers ----------------------------------------------------
 
@@ -438,8 +440,14 @@ def cmd_init(root: Path, a):
         ),
         encoding="utf-8",
     )
+    if a.ephemeral is not None:
+        fleet_ephemeral.mark_ephemeral(d, float(a.ephemeral))
+    # Fleet discovery: index the channel AFTER _meta.json is durably written,
+    # so a crashed init never indexes a half-made channel.
+    fleet_watch.note_channel(root, a.channel)
     m_str = ", ".join(members) if members else "(open)"
-    print(f"created channel '{a.channel}' at {d}  members={m_str}")
+    eph = f" ephemeral(ttl={a.ephemeral}s)" if a.ephemeral is not None else ""
+    print(f"created channel '{a.channel}' at {d}  members={m_str}{eph}")
 
 
 def cmd_keygen(root: Path, a):
@@ -448,6 +456,43 @@ def cmd_keygen(root: Path, a):
     except fleet_identity.FleetIdentityError as e:
         die(str(e))
     print(f"key written for '{a.agent_id}' at {key_path}  (keep it secret; 0600)")
+
+
+def cmd_mark_ephemeral(root: Path, a):
+    d = require_channel(root, a.channel)
+    fleet_ephemeral.mark_ephemeral(d, float(a.ttl))
+    print(f"channel '{a.channel}' marked ephemeral (ttl={a.ttl}s)")
+
+
+def cmd_gc(root: Path, a):
+    if a.dry_run:
+        expired = []
+        try:
+            with os.scandir(root) as it:
+                for entry in it:
+                    if not entry.is_dir() or entry.name.startswith("."):
+                        continue
+                    try:
+                        if fleet_ephemeral.is_expired(Path(entry.path)):
+                            expired.append(entry.name)
+                    except OSError:
+                        pass
+        except OSError as e:
+            die(f"cannot scan chat root: {e}")
+        if expired:
+            print("would reap (expired ephemeral channels):")
+            for name in sorted(expired):
+                print(f"  {name}")
+        else:
+            print("(no expired ephemeral channels)")
+        return
+    reaped = fleet_ephemeral.gc(root)
+    if reaped:
+        print("reaped (archived to .archive/ first):")
+        for name in reaped:
+            print(f"  {name}")
+    else:
+        print("(no expired ephemeral channels)")
 
 
 def cmd_channels(root: Path, a):
@@ -1259,7 +1304,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("channel", help="name of the channel to create")
     s.add_argument("--members", help="comma-separated agent names")
     s.add_argument("--topic", help="initial topic of the channel")
+    s.add_argument(
+        "--ephemeral",
+        type=float,
+        default=None,
+        help="create as an ephemeral channel with this TTL in seconds",
+    )
     s.set_defaults(func=cmd_init)
+
+    s = sub.add_parser("mark-ephemeral", help="mark a channel ephemeral with a TTL")
+    s.add_argument("channel", help="channel to mark")
+    s.add_argument("ttl", type=float, help="time-to-live in seconds")
+    s.set_defaults(func=cmd_mark_ephemeral)
+
+    s = sub.add_parser("gc", help="archive then reap expired ephemeral channels")
+    s.add_argument("--dry-run", action="store_true", help="list what would be reaped")
+    s.set_defaults(func=cmd_gc)
 
     s = sub.add_parser("keygen", help="mint an HMAC identity key for an agent")
     s.add_argument("agent_id", help="agent id (must match fleet identity rules)")
