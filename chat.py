@@ -38,6 +38,7 @@ from fleet_addr import addressed_wait_filter
 import fleet_dag
 import fleet_delta
 import fleet_bids
+import fleet_crdt
 import fleet_e2ee
 import fleet_ephemeral
 import fleet_gossip
@@ -462,6 +463,11 @@ def cmd_init(root: Path, a):
     # Fleet discovery: index the channel AFTER _meta.json is durably written,
     # so a crashed init never indexes a half-made channel.
     fleet_watch.note_channel(root, a.channel)
+    # Fleet CRDT: channel creation is a commutative op on the root log.
+    _record_op(
+        root, None, fleet_crdt.CHANNEL_CREATE, "system", 0,
+        {"channel": a.channel},
+    )
     m_str = ", ".join(members) if members else "(open)"
     eph = f" ephemeral(ttl={a.ephemeral}s)" if a.ephemeral is not None else ""
     print(f"created channel '{a.channel}' at {d}  members={m_str}{eph}")
@@ -555,6 +561,12 @@ def cmd_react(root: Path, a):
         strength=a.strength, ttl_s=a.ttl, note=a.note or "",
     )
     print(f"trace deposited on #{a.seq} in '{a.channel}' (kind={a.kind})")
+    # Fleet CRDT: the reaction is a commutative operation.
+    _record_op(
+        root, a.channel, fleet_crdt.REACT, a.agent,
+        fleet_time.tick(root, a.agent),
+        {"target_seq": a.seq, "react_kind": a.kind, "strength": a.strength},
+    )
 
 
 def cmd_gossip(root: Path, a):
@@ -876,7 +888,24 @@ def cmd_post(root: Path, a):
             print(f"(warning: log.jsonl append failed: {e})", file=sys.stderr)
     finally:
         _release_lock(lock)
+    # Fleet CRDT: the post is a commutative operation; the op log lets any
+    # replica converge on the same action set regardless of order.
+    _record_op(root, channel, fleet_crdt.POST, sender, lamport, {"seq": seq})
     print(f"posted #{seq} -> {a.channel}/{fname}")
+
+
+def _record_op(root: Path, channel: str | None, kind: str, actor: str,
+               lamport: int, payload: dict) -> None:
+    """Append one CRDT op. Fail soft (stderr warning): the op log is a
+    derived index, and it must never break the action it records."""
+    try:
+        fleet_crdt.append_op(
+            root, channel,
+            fleet_crdt.make_op(kind, channel or "root", actor, lamport,
+                               payload=payload),
+        )
+    except Exception as e:  # noqa: BLE001 -- op log never breaks actions
+        print(f"(warning: op log append failed: {e})", file=sys.stderr)
 
 
 def _print_message(path: Path, meta: dict | None = None):
@@ -1501,6 +1530,12 @@ def cmd_task_claim(root: Path, a):
     # The round is decided: archive its bids so a later release starts fresh.
     if bid_res is not None:
         fleet_bids.archive_round(root, a.channel, a.task_id)
+    # Fleet CRDT: the claim is a commutative operation (LWW by lamport).
+    _record_op(
+        root, a.channel, fleet_crdt.CLAIM, actor,
+        fleet_time.tick(root, actor),
+        {"task_id": a.task_id, "agent": actor},
+    )
     # Stigmergy: every successful claim leaves a trace for suggest-role.
     # Traces must never break claims.
     try:
@@ -1533,6 +1568,12 @@ def cmd_task_bid(root: Path, a):
     if res["winner"]:
         ranked = ", ".join(f"{b['agent']}={b['score']}" for b in res["ranked"])
         print(f"current consensus winner: '{res['winner']}' (ranked: {ranked})")
+    # Fleet CRDT: the bid is a commutative operation (latest-wins per agent).
+    _record_op(
+        root, a.channel, fleet_crdt.BID, _task_actor(a),
+        fleet_time.tick(root, _task_actor(a)),
+        {"task_id": a.task_id, "score": bid["score"], "ts": bid["ts"]},
+    )
 
 
 def cmd_task_bids(root: Path, a):
@@ -1552,6 +1593,41 @@ def cmd_task_bids(root: Path, a):
         mark = " <-- consensus winner" if b["agent"] == res["winner"] else ""
         note = f" -- {b['note']}" if b.get("note") else ""
         print(f"{i}. {b['agent']}: score={b['score']}{mark}{note}")
+
+
+def cmd_ops(root: Path, a):
+    """Show the commutative op log (Shapiro et al. 2011).
+
+    The op log records every fleet action kind -- posts, reactions,
+    channel creates, bids, claims -- as commutative operations. Any two
+    replicas that have seen the same ops materialize the same state,
+    regardless of the order they observed them in. The .md files remain
+    the canonical human-readable data; this is the convergence substrate.
+    """
+    ops = fleet_crdt.read_ops(root, a.channel)
+    if a.json:
+        print(json.dumps(ops, indent=2))
+        return
+    where = f"channel '{a.channel}'" if a.channel else "root"
+    if not ops:
+        print(f"(no ops for {where})")
+        return
+    if a.materialize:
+        state = fleet_crdt.materialize(ops)
+        print(f"{where}: {len(ops)} op(s) materialized")
+        print(f"  messages: {sorted(state['messages'])}")
+        print(f"  reactions: {len(state['reactions'])}")
+        print(f"  channels: {state['channels']}")
+        bids = {
+            t: {ag: b["score"] for ag, b in agents.items()}
+            for t, agents in state["bids"].items()
+        }
+        print(f"  bids: {bids}")
+        claims = {t: c["agent"] for t, c in state["claims"].items()}
+        print(f"  claims: {claims}")
+        return
+    for o in ops:
+        print(f"{o['lamport']:>4} {o['kind']:<14} {o['actor']:<12} {o['op_id']}")
 
 
 def cmd_task_renew(root: Path, a):
@@ -1686,6 +1762,21 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("channel", help="channel to read traces from")
     s.add_argument("--as", dest="agent", required=True, help="agent asking for a suggestion")
     s.set_defaults(func=cmd_suggest_role)
+
+    s = sub.add_parser(
+        "ops",
+        help="show the commutative op log (posts, reactions, bids, claims...)",
+    )
+    s.add_argument(
+        "channel", nargs="?", default=None,
+        help="channel to inspect (omit for the root channel-create log)",
+    )
+    s.add_argument("--json", action="store_true", help="raw ops as JSON")
+    s.add_argument(
+        "--materialize", action="store_true",
+        help="fold the ops into replica state",
+    )
+    s.set_defaults(func=cmd_ops)
 
     s = sub.add_parser(
         "gossip",
