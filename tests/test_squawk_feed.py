@@ -29,6 +29,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import chat  # noqa: E402
 import fleet_identity  # noqa: E402
+
+for _agent in ("alice", "bob", "mallory", "recovery", "system"):
+    try:
+        fleet_identity.keygen(_agent, kd=_KEYS)
+    except Exception:
+        pass
 import squawk_feed  # noqa: E402
 
 TOKEN = "test-bearer-token-xyz"
@@ -60,8 +66,11 @@ class SquawkFeedFatTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(_tmp.name) / "chat-root"
-        fleet_identity.keygen("relay", kd=_KEYS)
-        fleet_identity.keygen("alice", kd=_KEYS)
+        for _a in ("relay", "alice"):
+            try:
+                fleet_identity.keygen(_a, kd=_KEYS)
+            except Exception:
+                pass
         if _nacl_ok:
             squawk_seal.keygen("relay", keys_dir=_KEYS)
         chat.cmd_init(
