@@ -10,7 +10,7 @@ requires-python = ">=3.8"
 license = { text = "Apache-2.0" }
 authors = [{ name = "n24q02m" }]
 keywords = ["multi-agent", "coordination", "markdown", "blackboard", "claude-code", "agent-skills", "peer-to-peer"]
-version = "0.7.2"  # managed by python-semantic-release; do not hand-edit
+version = "0.7.3"  # managed by python-semantic-release; do not hand-edit
 dependencies = [
     "cryptography>=41.0.0",  # required by fleet_e2ee.py for priv-* channels
     "pynacl>=1.5.0",  # required by squawk_seal.py for sealed secrets

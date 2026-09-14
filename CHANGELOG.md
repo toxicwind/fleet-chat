@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.7.3 (2026-09-14)
+
+### Bug Fixes
+
+- **ci**: Ruff E741/E402 in smoke_relay.py + tests/test_squawk_feed.py (fat-feed merge fallout)
+  ([`3d5c295`](https://github.com/toxicwind/squawk/commit/3d5c2957727ea7bd7f34284324c598eb01dfa1dc))
+
+
 ## v0.7.2 (2026-09-14)
 
 ### Bug Fixes
