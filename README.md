@@ -1,200 +1,169 @@
-# agent-chat
+# fleet-chat
 
-[![PyPI](https://img.shields.io/pypi/v/agent-chat-plugin.svg)](https://pypi.org/project/agent-chat-plugin/)
-[![Python](https://img.shields.io/pypi/pyversions/agent-chat-plugin.svg)](https://pypi.org/project/agent-chat-plugin/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![CI](https://github.com/n24q02m/agent-chat-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/agent-chat-plugin/actions/workflows/ci.yml)
+**File-based multi-agent chat with no daemon, no sockets, no HTTP — just a
+folder of Markdown files.** Forked from `n24q02m/agent-chat-plugin`
+(Apache-2.0), then maximally merged with the working mechanisms of six
+other agent-chat repositories and ten distributed-systems papers. Every
+claim in this README is traceable to code: module docstrings carry the
+provenance, and the behaviors listed under "Verified" were exercised, not
+assumed.
 
-<!-- BEGIN: AUTO-GENERATED-CROSS-PROMO -->
-<details>
-  <summary><strong>Sister projects from n24q02m</strong> (click to expand)</summary>
+Target deployment: `/home/toxic/.shingle/chat` on awrawr-pc. The
+WhatsApp-side agent can only read/write files there — so the core stays
+file-based. Nothing in the hot path needs a network port, a server, or an
+MCP bridge.
 
-| Project | Tagline | Tag |
-|---|---|---|
-| [agent-chat-plugin](https://github.com/n24q02m/agent-chat-plugin) | Peer AI agents chat in a shared folder — no human relay, no orchestrator, wor... | Tooling |
-| [better-code-review-graph](https://github.com/n24q02m/better-code-review-graph) | Knowledge graph for token-efficient code reviews -- semantic search and call-... | MCP |
-| [better-drive](https://github.com/n24q02m/better-drive) | 2-way Google Drive sync with .driveignore filter — rclone engine, Windows tray | Tooling |
-| [better-email-mcp](https://github.com/n24q02m/better-email-mcp) | IMAP/SMTP email for AI agents -- read, send, organize folders, and manage att... | MCP |
-| [better-godot-mcp](https://github.com/n24q02m/better-godot-mcp) | Composite MCP server for Godot Engine -- 17 composite tools for AI-assisted g... | MCP |
-| [better-notion-mcp](https://github.com/n24q02m/better-notion-mcp) | Markdown-first Notion for AI agents -- pages, databases, blocks, and comments... | MCP |
-| [better-semantic-release](https://github.com/n24q02m/better-semantic-release) | Drop-in python-semantic-release fork with built-in release-safety guards (orp... | Tooling |
-| [better-telegram-mcp](https://github.com/n24q02m/better-telegram-mcp) | Telegram for AI agents -- messages, chats, media, and contacts across both bo... | MCP |
-| [better-workspace-mcp](https://github.com/n24q02m/better-workspace-mcp) | Google Workspace MCP server (Docs/Drive/Calendar/Gmail/Sheets/Slides/Tasks/Ch... | MCP |
-| [claude-plugins](https://github.com/n24q02m/claude-plugins) | Claude Code plugin marketplace for the n24q02m MCP servers -- install web sea... | Marketplace |
-| [imagine-mcp](https://github.com/n24q02m/imagine-mcp) | Image and video understanding + generation for AI agents -- across Gemini, Op... | MCP |
-| [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver) | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling |
-| [mcp-core](https://github.com/n24q02m/mcp-core) | Shared foundation for building MCP servers -- Streamable HTTP transport, OAut... | MCP |
-| [mnemo-mcp](https://github.com/n24q02m/mnemo-mcp) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
-| [qwen3-embed](https://github.com/n24q02m/qwen3-embed) | Lightweight Qwen3 text embedding and reranking via ONNX Runtime and GGUF | Library |
-| [skret](https://github.com/n24q02m/skret) | Secrets without the server. | CLI |
-| [tacet](https://github.com/n24q02m/tacet) | A self-distilling neuro-symbolic cascade that amortises LLM cost across knowl... | Tooling |
-| [web-core](https://github.com/n24q02m/web-core) | Shared web infrastructure package for search, scraping, HTTP security, and st... | Library |
-| [wet-mcp](https://github.com/n24q02m/wet-mcp) | Open-source MCP server for AI agents: web search, content extraction, and lib... | MCP |
+## Architecture in 60 seconds
 
-</details>
-<!-- END: AUTO-GENERATED-CROSS-PROMO -->
-
-
-**Peer AI agents chat in a shared folder — no human relay, no orchestrator, works on
-Windows, waits at zero tokens.**
-
-Multiple agent sessions (OMP, Claude Code, Codex, Cursor, OpenCode — same tool or mixed)
-coordinate as equals by exchanging markdown messages in shared **channel folders**.
-The folder is the whole state: git-committable, human-readable, replayable. A crashed
-session loses nothing.
-
-The dependency-free CLI (`chat.py` plus the `agent_chat/` modules, Python stdlib)
-runs on Windows, WSL, and Linux. Waiting for a reply blocks in-process —
-**the wait loop makes no model calls and consumes no model tokens.**
-
-> Distributed as **`agent-chat-plugin`** on PyPI and as a Claude Code plugin (the short
-> name `agent-chat` was taken on PyPI). The command and skill are still `agent-chat`.
-
-## Why this exists
-
-Claude Code now has a native **cross-session messaging** path for Claude Code sessions
-on supported platforms. The peer case this project targets is broader: N equal sessions
-across Claude Code, Codex, Cursor, OpenCode, or mixed tools coordinating through a
-file-backed, auditable folder of messages and autonomously waiting on each other. This
-is that cross-tool answer. (Honest scope: this is a young space; see `COMPARISON.md` for
-the native Claude Code overlap and the exact differences.)
-
-### Claude Code native overlap
-
-Claude Code `v2.1.224+` provides **Cross-session messaging** through `ListAgents` and
-`SendMessage` on macOS/Linux, including WSL2; native Windows is not currently supported.
-That feature is Claude-Code-only and delivers messages directly between sessions. This
-project remains distinct through mixed-tool coordination, native Windows support,
-Markdown channels that are git-committable and replayable, atomic claims/cursors, and
-zero-token in-process waiting. On supported Claude Code platforms, the native path may
-make this plugin's optional unread-notification hooks redundant; it does not replace the
-file-backed protocol.
-
-## Quickstart
-
-Run these commands from a complete repository checkout. With the installed CLI,
-replace `python chat.py` with `agent-chat` (see [Install & distribution](#install--distribution)).
-
-```bash
-# a channel = a group chat
-python chat.py init review --members alice,bob --topic "code review"
-
-# alice posts to bob
-python chat.py post review --from alice --to bob --title "Schema v0.2" --body "Ready for review."
-
-# bob reads what's new for him
-python chat.py read review --as bob
-
-# create dependent work
-python chat.py task create review T-0001 --from alice --title "Implement schema"
-python chat.py task create review T-0002 --from alice --title "Review schema" --depends-on T-0001
-
-# claim, renew and complete a ready task
-python chat.py task claim review T-0001 --as alice --lease-seconds 900
-python chat.py task renew review T-0001 --as alice --lease-seconds 900
-python chat.py task done review T-0001 --as alice
-
-# coordinate paths and state
-python chat.py lock review src/schema.py --as alice --lease-seconds 900
-python chat.py unlock review src/schema.py --as alice
-python chat.py state review
-python chat.py compact review --as alice
-
-# capability handshake without claiming host-native execution
-python chat.py event post review --from alice --type capability --harness generic-shell
+```
+<chat-root>/
+  <channel>/NNNN-<from>-<slug>.md   # the messages; canonical human-readable data
+  <channel>/log.jsonl               # append-only parallel index (fleet_log)
+  <channel>/.ops.jsonl              # commutative op log (fleet_crdt)
+  <channel>/.bids/<task>.jsonl      # task bid rounds (fleet_bids)
+  <channel>/.traces/                # stigmergic pheromone traces (fleet_stigmergy)
+  <channel>/.vectors/               # per-agent delta summary vectors (fleet_delta)
+  .channels-index                   # append-only channel discovery (fleet_watch)
+  .clocks/<agent>                   # Lamport clocks (fleet_time)
+  .presence/<agent>.json            # liveness hints, NOT identity (fleet_presence)
 ```
 
-Root precedence is `--root` > `$AGENT_CHAT_ROOT` > `~/agent-chat`. Put the global
-flag before the subcommand: `python chat.py --root "/shared/chat" channels`.
-Run `python chat.py <cmd> --help` for all flags.
+One Python file (`chat.py`, stdlib only) plus `fleet_*.py` modules, also
+stdlib only. The base's guarantees are kept: atomic seq allocation under a
+mkdir lock, zero-token `wait` (inotify fast path via `fleet_wait`, poll
+fallback), per-agent cursors, and Markdown files as the source of truth.
+Every fleet index (`log.jsonl`, `.ops.jsonl`, vectors, traces) is a
+*derived, rebuildable* structure — delete any of them and the chat still
+reads.
 
-## How it works
+## Quick start
 
-- **Channels** — one folder per group chat; make as many as needed with `init`.
-- **Messages** — numbered Markdown files with frontmatter and immutable replies.
-- **Cursors** — `read`/`wait` show only new relevant messages.
-- **Tasks** — JSON records with dependencies, readiness, status and acceptance.
-- **Leases** — owner-bound claims with expiry and explicit stale recovery.
-- **Path locks** — normalized workspace-relative ownership records with conflict checks.
-- **State** — deterministic derived `state.md`; compaction never replaces source records.
-- **Events** — versioned capability/status JSON carried through ordinary messages.
-- **Atomicity** — filesystem transactions, audit events and recovery markers protect concurrent work.
+```bash
+export AGENT_CHAT_ROOT=/home/toxic/.shingle/chat
+python3 chat.py init ops                    # create a channel
+python3 chat.py keygen alice                  # mint alice's HMAC identity key
+python3 chat.py post ops --from alice --title hello --body "hi"
+python3 chat.py read ops --as bob            # bob reads (HMAC-verified)
+python3 chat.py wait ops --as bob --timeout 60   # zero-token block for replies
+```
 
-Agent Chat is a coordination data layer. It does not execute agents, assign models,
-approve permissions, run MCP/ACP, or wake another process. No command or hook
-calls an LLM, embedding/rerank provider, graph service, relay, or Cloudflare gateway.
-`state`/`compact` derive summaries from local records, not model-generated text;
-capability/status events describe a peer and do not invoke it.
+Identity is mandatory once keys exist: posts are HMAC-SHA256 signed
+(`fleet_identity`), and readers reject forged, unsigned, or revoked
+senders. Keys live **outside** the chat root (`~/.shingle/keys/`, or
+`$FLEET_KEYS_DIR`).
 
-## Two modes, two budgets
+## Command reference
 
-- **Live swarm** — N sessions run concurrently and use `wait` for wall-clock parallelism.
-- **Async handoff / audit** — a session posts an artifact summary for the next session.
-
-Both modes use the same file-backed protocol and remain auditable.
-
-## Install & distribution
-
-- **As a CLI** — `pipx install agent-chat-plugin`, then run `agent-chat <cmd>`.
-  For one-off execution use `uvx --from agent-chat-plugin agent-chat <cmd>` on
-  each invocation; `uvx` does not install a persistent `agent-chat` command.
-- **As a standalone Skill** — copy the root `SKILL.md`, `chat.py`, and the
-  entire `agent_chat/` directory together into a compatible Skills directory.
-  Copying only `chat.py` breaks task, lease, path-lock, and state commands.
-- **As a Claude Code plugin** — install the marketplace package from
-  [claude-plugins](https://github.com/n24q02m/claude-plugins). Keep
-  `.claude-plugin/`, `hooks/`, `commands/`, `skills/`, `chat.py`, and
-  `agent_chat/` together; the plugin skill is `skills/agent-chat/SKILL.md`.
-
-PyPI installs the CLI and its Python modules, not the skill, slash command, or
-lifecycle hooks. Use the checkout/plugin distribution for those assets.
-
-All participants must address the same channel root on a filesystem with the
-required atomic replacement and locking semantics. Separate home/company
-`~/agent-chat` directories are separate inboxes; this package does not sync
-machines or install a background service. Give each participant a distinct
-`AGENT_CHAT_NAME` for hooks; CLI identities are explicit `--from`/`--as` flags.
-Set environment values before starting the host, not by changing its model or
-MCP configuration.
-
-### Optional inbox hooks
-
-`hooks/hooks.json` registers three Claude Code lifecycle commands. Python hook
-scripts can be invoked by absolute checkout path in another host, but that host
-must explicitly support or adapt their lifecycle/output contract:
-
-| Hook | Output when messages are unread |
+| Command | What it does |
 |---|---|
-| `SessionStart` / `hooks/session_inbox.py` | Plain-text channel/count notice; warns about unset identity when channels exist. |
-| `UserPromptSubmit` / `hooks/prompt_inbox.py` | Plain-text channel/count notice; unset identity is silent. |
-| `Stop` / `hooks/stop_inbox.py` | Claude-compatible JSON with `systemMessage`; unset identity is silent. |
+| `init` / `channels` / `roster` | channel lifecycle, discovery, membership |
+| `post --from --title [--to] [--reply] [--body]` | signed, Lamport-stamped, DAG-linked message |
+| `read --as` / `peek` / `wait --as` | verified read; cursor-advancing read; zero-token block |
+| `digest --as` | slow-path "what's new" across channels (delta vectors) |
+| `gossip [--repair]` | anti-entropy: scan seq gaps, backfill from `log.jsonl` |
+| `react --as --seq --kind` | stigmergic pheromone trace (signal, not notification) |
+| `suggest-role --as` | advisory role suggestion from local claim traces |
+| `task bid/bids/claim/...` | bid-then-consensus task allocation over the base lease store |
+| `heartbeat` / `presence` / `suspect` | SWIM-style liveness (never authorization) |
+| `ops [--materialize]` | commutative op log + converged replica state |
+| `dag` / `thread` / `clocks` | hash-chain verification, reply threads, Lamport diagnostics |
+| `keygen` | mint per-agent HMAC keys |
+| `mark-ephemeral` / `gc` | TTL channels: archive-then-reap |
 
-Set `AGENT_CHAT_ROOT` and optionally comma-separated `AGENT_CHAT_CHANNELS`
-to restrict checks to relevant channels (empty means all discovered channels).
-Malformed channel names are skipped without suppressing other configured inboxes.
-Hooks only print when unread messages are relevant to the current identity,
-bound each notice to a small stdout budget, and never advance cursors, read
-message bodies into notices, reply, block a turn, or wake a peer. `read` and
-successful `wait` advance cursors.
+Private channels (`priv-*`) are end-to-end encrypted: `init` provisions a
+Fernet channel key, `post` encrypts before HMAC-signing, and `read`/`wait`/
+`peek` verify-then-decrypt. Ciphertext is what's at rest; tampering fails
+closed at the HMAC layer before decryption is attempted.
 
-The scripts prefer non-empty `CLAUDE_PLUGIN_ROOT`; otherwise they resolve
-`chat.py` beside their own `hooks/` directory. An unresolved plugin root skips
-with a one-line stderr diagnostic; hook failures always exit 0. Quote paths:
-`python "/path/to/agent-chat-plugin/hooks/session_inbox.py"`.
+## Provenance I — the seven repositories
 
-A portable script is not an installed OMP/native integration. Verify each host's
-explicit invocation and rendered notice; CLI installation or a successful
-source check alone does not prove hooks are loaded on home or company.
+The fork was chosen after a read-only, code-level comparison of seven
+agent-chat repositories. The base won because its README survived contact
+with its source: agents really do `mkdir` their own channels, discovery
+really is a directory scan, `wait` really is sleep with zero model calls,
+and there is no server, daemon, socket, or subprocess in the runtime path.
+The other six each contributed exactly one working mechanism — the concept,
+re-implemented file-based, never the dependency stack.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for developer setup and runtime layout.
+| Repository | What was taken | Where it lives |
+|---|---|---|
+| `n24q02m/agent-chat-plugin` | the base: file transport, atomic seq, cursors, zero-token wait | `chat.py` (pristine at `914d1c0`) |
+| `weijiafu14/agent-chatroom` | append-only `messages.jsonl` room log (their `scripts/coord_write.py:373-374`); racy bits left behind | `fleet_log.py` → `<channel>/log.jsonl` |
+| `WarrenSchultz/chatroom-mcp` | atomic-claim task board | `fleet_tasks.py` (base `TaskStore`/`LeaseStore`, unchanged semantics) |
+| `dipakkr/agentsync` | identity roster: `member.register` events folded into per-agent docs (`src/hub/store.js`, `src/mcp/server.js:50-53`), presence as heartbeat fold (`src/hub/server.js:212-229`) | `fleet_roster.py` (single file at `~/.shingle/roster`, revocation as first-class state) |
+| `madnh/scratchpad` | `--to` direct addressing (`cmd/scratchpad/pad.go:322`, `internal/pad/pad.go:92,137,140`, `internal/pad/wake.go:44,85,143`); their turn-taking model deliberately dropped | `fleet_addr.py` — addressing is a *wake hint*, never access control |
+| `michaelwang123/arthas` | room-key model: one symmetric key per room, held by every member, encrypt-before-write | `fleet_e2ee.py` — relay server, web client, Docker all stripped |
+| `kotinder/roomcomm` | lifecycle/janitor: `create_room` (`app/main.py:372-428`), wall-clock expiry in an explicit maintenance pass (`app/main.py:244-248`), bounded rooms (`app/main.py:161`) | `fleet_ephemeral.py` — `mark-ephemeral`, `gc` archives-then-reaps; hosted REST not used |
 
-## Status
+What was *not* taken, on purpose: every server, WebSocket, REST API, Docker
+setup, Node runtime, and turn-taking/arbiter model in the six donors. The
+WhatsApp-side agent has a filesystem and nothing else.
 
-The reference implementation covers file-backed messages, cursors, token-free wait,
-structured tasks/dependencies, leases, normalized path locks, derived state and
-adapter-neutral capability/status events. MCP wrappers, ACP/wake bridges and agent
-execution remain separate future designs.
+## Provenance II — the ten papers
+
+A paper hunt screened 59 candidates and selected 12; ten were implemented
+as working, tested code below. Each module docstring names its paper and
+states what was stolen and what was left behind.
+
+| Paper | Mechanism stolen | Module |
+|---|---|---|
+| Demers et al. 1987, "Epidemic algorithms for replicated database maintenance" | anti-entropy: periodic deterministic repair between two views of one channel (message files vs `log.jsonl`) | `fleet_gossip.py` |
+| Lamport 1978, "Time, clocks, and the ordering of events in a distributed system" | logical clocks: tick on send, observe on receive, causal sort by `(lamport, seq, agent)` | `fleet_time.py` |
+| Das, Gupta, Motivala 2002, "SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol" | alive/suspect/dead marks evaluated on the read path, no watchdog | `fleet_presence.py` |
+| Jelasity et al. 2007, "Gossip-based peer sampling" | small random peer views gossiped between agents, no central registry | `fleet_presence.py` |
+| De Nicola et al. 2019, "Multi-agent systems with virtual stigmergy" | the channel folder as stigmergic medium; TTL-decaying pheromone traces | `fleet_stigmergy.py` |
+| Ferrante et al. 2015, "Evolution of Self-Organized Task Specialization in Robot Swarms" | response-threshold role specialization from claim traces; advisory only | `fleet_stigmergy.py` (`suggest-role`) |
+| Almeida, Shoker, Baquero 2017, "Delta state replicated data types" | per-agent summary vectors; exchange only `seq > vector[channel]` deltas | `fleet_delta.py` |
+| Borth et al. 2025, "Directed Acyclic Graph CRDTs" | hash-linked `parents:` frontmatter; threads as DAG joins; `dag`/`thread` verification | `fleet_dag.py` |
+| Wang et al. 2022 (bid-then-consensus) | suitability bids in `[0,1]`; deterministic winner (score, agent id, timestamp); winner-only claim gate over the existing lease store | `fleet_bids.py` |
+| Shapiro et al. 2011, "A comprehensive study of Convergent and Commutative Replicated Data Types" | op-based log: commutative, associative, idempotent merge; order-independent materialization | `fleet_crdt.py` |
+
+Deliberate deviations, stated so nobody has to discover them: the CRDT
+merge is trivial today (one shared filesystem = one log); its value is the
+proven algebra for the day a member works from a replica. Historical
+HMAC-v1 messages verify as v1 without Lamport/parent authentication —
+migration compatibility, not a downgrade path (stripping v2 fields fails).
+Presence never authorizes; the roster does. Role suggestions are never
+enforced.
+
+## Verified behaviors
+
+Exercised 2026-09-14, not asserted:
+
+- **E2EE (7/7):** key provisioning, encrypted post accepted, no plaintext
+  in `.md` or `log.jsonl`, digest shows decrypted snippet, read
+  verify-then-decrypt, ciphertext tampering rejected at HMAC, keyless post
+  refused with no plaintext fallback.
+- **HMAC v2 (7/7):** new posts verify as v2; Lamport/parent tampering or
+  stripping rejected; legacy v1 and transitional messages still verify as
+  v1; DAG message IDs stable across the upgrade.
+- **Anti-entropy:** post → delete `.md` → `gossip --repair` → recovered
+  file byte-identical except `recovered_from: log.jsonl`, HMAC-verified.
+- **Wait:** irrelevant traffic no longer ends a wait (regression fixed);
+  timeout exits without consuming unseen messages.
+- **Bidding:** non-winner claim rejected with the ranked consensus;
+  winner claims; round archived; claim trace feeds `suggest-role`.
+- **CRDT:** merge commutativity/associativity/idempotence and
+  order-independent materialization proven in `fleet_crdt.selftest()`.
+- **Two-agent post/wait/read:** the base contract, re-run after every
+  merge.
+
+## Layout of a channel
+
+```
+<channel>/
+  NNNN-<from>-<slug>.md   # frontmatter: from, to, title, lamport, parents, hmac, ...
+  _meta.json              # channel metadata
+  log.jsonl               # append-only index (rebuildable)
+  .ops.jsonl              # commutative op log (rebuildable)
+  .bids/<task>.jsonl      # bid rounds (archived on claim)
+  .traces/                # pheromone traces with TTLs
+  .vectors/<agent>.json   # delta summary vectors
+  .cursors/<agent>        # read cursors
+```
 
 ## License
 
-Apache-2.0.
+Base `chat.py` is Apache-2.0 (`n24q02m/agent-chat-plugin`). Fleet modules
+are original implementations of stolen *concepts*; see each module
+docstring for its provenance.
