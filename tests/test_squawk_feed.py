@@ -27,9 +27,9 @@ os.environ["FLEET_KEYS_DIR"] = str(_KEYS)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import chat
-import fleet_identity
-import squawk_feed
+import chat  # noqa: E402
+import fleet_identity  # noqa: E402
+import squawk_feed  # noqa: E402
 
 TOKEN = "test-bearer-token-xyz"
 

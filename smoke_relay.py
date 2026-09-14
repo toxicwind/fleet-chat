@@ -64,9 +64,9 @@ def main():
     r = run("--root", str(root), "relay-out", "fleet",
             "--since", "0", "--identity", "relay",
             "--key-dir", str(keys), "--format", "json")
-    lines = [json.loads(l) for l in r.stdout.splitlines() if l.strip()]
-    recs = [l for l in lines if "seq" in l]
-    cursor = [l for l in lines if "cursor" in l]
+    lines = [json.loads(line) for line in r.stdout.splitlines() if line.strip()]
+    recs = [line for line in lines if "seq" in line]
+    cursor = [line for line in lines if "cursor" in line]
     assert len(recs) == 3, recs
     assert cursor and cursor[0]["cursor"] == 3
     m1 = recs[0]
@@ -85,8 +85,8 @@ def main():
     r = run("--root", str(root), "relay-out", "fleet",
             "--since", "2", "--identity", "relay",
             "--key-dir", str(keys), "--format", "json")
-    lines = [json.loads(l) for l in r.stdout.splitlines() if l.strip()]
-    assert [l["seq"] for l in lines if "seq" in l] == [3]
+    lines = [json.loads(line) for line in r.stdout.splitlines() if line.strip()]
+    assert [line["seq"] for line in lines if "seq" in line] == [3]
     print("cursor --since 2 OK")
 
     # tamper: relay metadata is HMAC-covered, must fail verification
@@ -97,8 +97,8 @@ def main():
     r = run("--root", str(root), "relay-out", "fleet",
             "--since", "0", "--identity", "relay",
             "--key-dir", str(keys), "--format", "json")
-    recs = [json.loads(l) for l in r.stdout.splitlines()
-            if l.strip() and '"seq"' in l]
+    recs = [json.loads(line) for line in r.stdout.splitlines()
+            if line.strip() and '"seq"' in line]
     assert recs[0]["signature"] == "invalid", recs[0]
     assert recs[0]["sealed"] is False
     print("tamper detected OK: signature =", recs[0]["signature"])
