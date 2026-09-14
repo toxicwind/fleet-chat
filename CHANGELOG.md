@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v0.7.4 (2026-09-14)
+
+### Bug Fixes
+
+- **ci**: Mint fleet identity keys at import in test_squawk_feed (FLEET_KEYS_DIR override poisoned
+  whole suite -> 74 errors)
+  ([`7598162`](https://github.com/toxicwind/squawk/commit/75981622893c029d0e0062201f7cb0cb4cb4a7c5))
+
+
 ## v0.7.3 (2026-09-14)
 
 ### Bug Fixes
