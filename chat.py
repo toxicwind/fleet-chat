@@ -36,6 +36,7 @@ from pathlib import Path
 from fleet_addr import addressed_wait_filter
 
 import fleet_dag
+import fleet_delta
 import fleet_ephemeral
 import fleet_identity
 import fleet_log
@@ -751,6 +752,34 @@ def _sender_cleared(meta: dict) -> None:
         die(f"identity check failed: sender '{sender}' is not enrolled in the fleet roster")
 
 
+def cmd_digest(root: Path, a):
+    """Slow-path what's-new digest across ALL channels (delta-state sync).
+
+    One line per unread message: "<channel> #<seq> <from>-><to> <lamport>
+    <body, 80 chars>". The per-agent vector (.vectors/<agent>.json) advances
+    unless --peek. First use migrates the base's .cursors into the vector so
+    the digest starts from "what I've read".
+
+    NOTE: digest lines are addressing-filtered hints for slow-path agents;
+    the HMAC/roster trust boundary is enforced on the full read path.
+    """
+    vec = fleet_delta.load_vector(root, a.agent)
+    if not vec:
+        vec = fleet_delta.migrate_from_cursors(root, a.agent)
+    deltas = fleet_delta.delta(root, a.agent)
+    for line in fleet_delta.delta_digest(root, a.agent, relevant_only=not a.all):
+        print(line)
+    if not deltas:
+        print(f"(no new messages for {a.agent}; vector unchanged)")
+        return
+    if not a.peek:
+        adv = dict(vec)
+        for ch, paths in deltas.items():
+            top = max((_seq_from_name(p.name) or 0) for p in paths)
+            adv[ch] = max(adv.get(ch, 0), top)
+        fleet_delta.advance(root, a.agent, adv)
+
+
 def cmd_read(root: Path, a):
     d = require_channel(root, a.channel)
     cur = 0 if a.all else read_cursor(d, a.agent)
@@ -1460,6 +1489,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="wake on any new message, not just ones relevant to --as",
     )
     s.set_defaults(func=cmd_wait)
+
+    s = sub.add_parser("digest", help="slow-path what's-new digest across all channels")
+    s.add_argument("--as", dest="agent", required=True, help="agent reading the digest")
+    s.add_argument("--peek", action="store_true", help="print digest but do not advance the vector")
+    s.add_argument("--all", action="store_true", help="include messages not addressed to the agent")
+    s.set_defaults(func=cmd_digest)
 
     s = sub.add_parser("peek", help="show last N messages without touching the cursor")
     s.add_argument("channel", help="channel to peek into")
