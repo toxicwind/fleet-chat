@@ -785,6 +785,8 @@ def cmd_read(root: Path, a):
         except fleet_identity.FleetIdentityError as e:
             die(f"identity check failed: {e}")
         _sender_cleared(meta)
+        # Fleet Lamport: fold the sender's clock into ours (max, no tick).
+        fleet_time.observe(root, a.agent, fleet_time.message_lamport(meta))
         _print_message(p)
         shown += 1
 
@@ -819,6 +821,8 @@ def cmd_wait(root: Path, a):
                 except fleet_identity.FleetIdentityError as e:
                     die(f"identity check failed: {e}")
                 _sender_cleared(meta)
+                # Fleet Lamport: fold the sender's clock into ours.
+                fleet_time.observe(root, a.agent, fleet_time.message_lamport(meta))
                 _print_message(p)
             write_cursor(d, a.agent, max_seq(d))
             return
