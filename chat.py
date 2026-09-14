@@ -33,6 +33,8 @@ import sys
 import time
 from pathlib import Path
 
+from fleet_addr import addressed_wait_filter
+
 # --- root + small helpers ----------------------------------------------------
 
 
@@ -325,12 +327,9 @@ def parse_frontmatter(path: Path) -> dict:
 
 
 def is_relevant(meta: dict, agent: str) -> bool:
-    # A message concerns `agent` if it's a broadcast or explicitly addressed to
-    # them, and it isn't their own message (don't wake an agent on its own post).
-    if meta.get("from") == agent:
-        return False
-    to = meta.get("to_list", [])
-    return (not to) or (agent in to)
+    # Delegated to fleet_addr (ported from madnh/scratchpad): `to` is a hint
+    # for wake-worthiness, never a visibility lock. Broadcast is the default.
+    return addressed_wait_filter(meta, agent)
 
 
 # --- atomic sequence lock ----------------------------------------------------
@@ -664,7 +663,7 @@ def cmd_wait(root: Path, a):
                             continue
                         p = Path(entry.path)
                         meta = parse_frontmatter(p)
-                        if is_relevant(meta, a.agent):
+                        if a.all or is_relevant(meta, a.agent):
                             found.append(p)
             except OSError:
                 pass
@@ -1278,6 +1277,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument(
         "--interval", type=float, default=5.0, help="polling interval in seconds"
+    )
+    s.add_argument(
+        "--all",
+        action="store_true",
+        help="wake on any new message, not just ones relevant to --as",
     )
     s.set_defaults(func=cmd_wait)
 
