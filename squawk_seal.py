@@ -114,22 +114,22 @@ def _nacl():
     global _NACL, _NACL_ERROR
     if _NACL is None and _NACL_ERROR is None:
         try:
-            import nacl.public  # noqa: F401
-            import nacl.encoding  # noqa: F401
-            import nacl  # noqa: F401
-            _NACL = True
+            import nacl
+            import nacl.encoding
+            import nacl.exceptions
+            import nacl.public
         except ImportError as exc:
             _NACL_ERROR = exc
-    if not _NACL:
+        else:
+            _NACL = nacl
+    if _NACL is None:
         raise RuntimeError(
             "squawk_seal: PyNaCl is required for sealed secrets but is not "
             f"importable ({_NACL_ERROR}). Install it with:\n"
             "    pip install pynacl\n"
             "then retry. Refusing to proceed without real public-key crypto."
         )
-    import nacl.public
-    import nacl.encoding
-    return nacl
+    return _NACL
 
 
 def _check_agent_id(agent_id: str) -> str:
@@ -258,7 +258,7 @@ def unseal_bytes(private_key, ciphertext: bytes) -> bytes:
     box = nacl.public.SealedBox(private_key)
     try:
         return box.decrypt(ciphertext)
-    except Exception as exc:
+    except nacl.exceptions.CryptoError as exc:
         raise ValueError(
             "squawk_seal: decryption failed -- wrong private key or "
             "tampered ciphertext."
@@ -359,7 +359,7 @@ def _post_envelope(root: Path, channel: str, sender: str, recipient: str,
     if not meta.exists():
         init = subprocess.run(
             [sys.executable, str(CHAT_PY), "--root", str(root), "init", channel],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False,
         )
         if init.returncode != 0 and "already exists" not in (init.stderr + init.stdout):
             raise RuntimeError(f"squawk_seal: channel init failed: {init.stderr.strip()}")
@@ -377,7 +377,7 @@ def _post_envelope(root: Path, channel: str, sender: str, recipient: str,
                 "--title", title, "--status", "sealed",
                 "--body-file", tmp,
             ],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False,
         )
     finally:
         try:
@@ -516,7 +516,7 @@ def _cmd_unseal(a) -> int:
             sys.path.insert(0, str(CHAT_DIR))
             import fleet_e2ee
             body = fleet_e2ee.decrypt_message(channel, body)
-        except Exception as exc:
+        except (ImportError, RuntimeError, ValueError) as exc:
             print(f"error: private-channel decrypt failed: {exc}", file=sys.stderr)
             return 1
     try:
