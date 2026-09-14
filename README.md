@@ -1,4 +1,4 @@
-# fleet-chat
+# squawk
 
 **File-based multi-agent chat with no daemon, no sockets, no HTTP — just a
 folder of Markdown files.** Forked from `n24q02m/agent-chat-plugin`

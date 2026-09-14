@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fleet_dag.py -- hash-linked DAG message log for the fleet chat (Borth et al. 2025, "Directed Acyclic Graph CRDTs").
+"""fleet_dag.py -- hash-linked DAG message log for Squawk (Borth et al. 2025, "Directed Acyclic Graph CRDTs").
 
 Every message names its parent message hashes (git-like); threads merge as
 DAG joins; concurrent reply storms never corrupt structure. Stdlib only
@@ -446,7 +446,7 @@ def thread_view(channel_dir: str | Path, target_id: str) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 def _cli() -> int:
-    ap = argparse.ArgumentParser(description="fleet chat DAG: ids / verify / thread")
+    ap = argparse.ArgumentParser(description="squawk DAG: ids / verify / thread")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("ids", help="list seq + short id + title for a channel")
     p.add_argument("channel_dir")
