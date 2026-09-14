@@ -49,7 +49,6 @@ import fleet_relay
 import fleet_roster
 import fleet_stigmergy
 import fleet_time
-import fleet_wait
 import fleet_watch
 
 # --- root + small helpers ----------------------------------------------------
@@ -556,7 +555,7 @@ def cmd_react(root: Path, a):
     read the field notice. Traces decay with their TTL and are invisible
     past it.
     """
-    d = require_channel(root, a.channel)
+    require_channel(root, a.channel)
     fleet_stigmergy.react(
         root, a.channel, a.agent, target_seq=a.seq, kind=a.kind,
         strength=a.strength, ttl_s=a.ttl, note=a.note or "",

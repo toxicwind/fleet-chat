@@ -75,6 +75,7 @@ senders. Keys live **outside** the chat root (`~/.shingle/keys/`, or
 | `dag` / `thread` / `clocks` | hash-chain verification, reply threads, Lamport diagnostics |
 | `keygen` | mint per-agent HMAC keys |
 | `mark-ephemeral` / `gc` | TTL channels: archive-then-reap |
+| `squawk_seal.py keygen` / `seal` / `unseal` | sealed secrets: NaCl sealed-box encrypt to a recipient's public key; ciphertext-only on the channel |
 
 Private channels (`priv-*`) are end-to-end encrypted: `init` provisions a
 Fernet channel key, `post` encrypts before HMAC-signing, and `read`/`wait`/
@@ -84,6 +85,54 @@ closed at the HMAC layer before decryption is attempted.
 Prerequisite: `pip install cryptography` (also declared in
 `pyproject.toml`). Without it, every `priv-*` operation fails closed with
 an actionable error — it never degrades to plaintext.
+
+### Sealed secret transmission (`squawk_seal.py`)
+
+API keys and credentials can transit the chat without ever appearing as
+plaintext in channel logs, transcripts, or audit trails. The sender
+encrypts to the *recipient's* public key (NaCl sealed box, X25519); only
+ciphertext is posted. The envelope lives entirely in the message body,
+so the signed/HMAC/Lamport/DAG path is untouched — chat.py signs the
+ciphertext exactly like any other message.
+
+```bash
+# one-time: mint a seal keypair per agent (private key 0600, never leaves the box)
+python3 squawk_seal.py keygen shingle
+python3 squawk_seal.py keygen breaker
+
+# sender: encrypt + post (secret via --secret-file, piped stdin, or --secret)
+printf '%s' "$NVIDIA_API_KEY" | python3 squawk_seal.py seal \
+    --from shingle --to breaker --channel fleet --burn \
+    --note "nvidia key rotation 2026-09-14"
+
+# recipient: decrypt (plaintext -> stdout or --out file, never back to the channel)
+python3 squawk_seal.py unseal --as breaker --channel fleet --seq 12 --out ~/.secrets/nvidia.key
+```
+
+- `keygen <agent>` writes `<agent>.seal.key` (0600, private) and
+  `<agent>.seal.pub` (0644, public) under `/home/toxic/.shingle/keys`
+  (`FLEET_KEYS_DIR` overrides). Share the `.pub` freely; `pubkey <agent>`
+  prints it. Verify a recipient's public key out of band before sealing
+  high-value credentials (first fetch is trust-on-first-use).
+- `seal` refuses to post when the recipient has no public key. The
+  message is an ordinary signed post (`--status sealed`, `--to` the
+  recipient); anyone reading the channel sees only sender, recipient,
+  timestamp, and ciphertext size.
+- `unseal` refuses envelopes addressed to someone else and fails closed
+  on tamper/wrong key. `--burn` (set by the sender at seal time)
+  tombstones the message body after a successful decrypt: frontmatter,
+  seq, and DAG links stay intact, the ciphertext is destroyed, and the
+  message then fails HMAC verification *by design*.
+- Threat model: protects secret *values* at rest. Does not hide
+  metadata, has no forward secrecy (a compromised recipient private key
+  opens that recipient's history), and adds no sender authentication
+  beyond the chat's own HMAC signature — verify message signatures as
+  usual. On `priv-*` channels the envelope gets the channel-key layer
+  too (defense in depth); `unseal` strips it automatically.
+- Relay hook: the Squawk relay detects the
+  `-----BEGIN SQUAWK SEALED MESSAGE-----` marker and routes sealed
+  payloads to the relay identity's `unseal` path instead of the text
+  digest.
 
 ## Provenance I — the seven repositories
 
@@ -148,6 +197,11 @@ Exercised 2026-09-14, not asserted:
   in `.md` or `log.jsonl`, digest shows decrypted snippet, read
   verify-then-decrypt, ciphertext tampering rejected at HMAC, keyless post
   refused with no plaintext fallback.
+- **Sealed secrets:** keygen roundtrip, seal→post→unseal returns the exact
+  secret, channel file and `log.jsonl` hold ciphertext only (plaintext
+  grep: zero hits), wrong-recipient unseal refused, tampered ciphertext
+  rejected, burn-after-read tombstones the body while seq/frontmatter/DAG
+  survive, intact sealed messages still HMAC-verify.
 - **HMAC v2:** new posts verify as v2; Lamport/parent tampering or
   stripping rejected; legacy v1 and transitional messages still verify as
   v1; DAG message IDs stable across the upgrade.
