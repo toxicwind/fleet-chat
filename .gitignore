@@ -6,3 +6,8 @@ build/
 .worktrees/
 mock_chat_root/
 test_benchmark_corpus/
+
+# Environment files (never commit live secrets)
+.env
+.env.local
+!.env.example
