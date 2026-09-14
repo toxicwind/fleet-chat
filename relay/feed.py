@@ -266,7 +266,6 @@ def inotify_loop():
     while True:
         try:
             for wd, mask, name in _read_events():
-                path = _wd_to_path.get(wd, "")
                 # new dir under chat root -> watch it if it's a channel
                 if (wd in _wd_to_path and _wd_to_path[wd] == str(CHAT_ROOT)
                         and (mask & IN_ISDIR) and (mask & (IN_CREATE | IN_MOVED_TO))):

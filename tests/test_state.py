@@ -34,7 +34,7 @@ class StateStoreTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         chat.cmd_init(
             self.root,
-            SimpleNamespace(
+            SimpleNamespace(ephemeral=None, 
                 channel="review",
                 members="alice,bob",
                 topic="Review vNext architecture",
@@ -60,7 +60,7 @@ class StateStoreTests(unittest.TestCase):
         extra_frontmatter=None,
     ):
         """Helper to post a message with optional custom frontmatter."""
-        args = SimpleNamespace(
+        args = SimpleNamespace(ephemeral=None, 
             channel="review",
             sender=sender,
             to=to,

@@ -26,7 +26,11 @@ jobs:
       - name: install project package
         run: python -m pip install .
       - name: protocol and state tests
-        run: python -m unittest discover -s tests -p "test_*.py" -v
+        # -t . makes `tests` a package so tests/__init__.py provisions
+        # throwaway fleet identity keys (FLEET_KEYS_DIR) before any test
+        # module runs -- the audit path signs events and fails closed
+        # without key material, which CI runners don't have.
+        run: python -m unittest discover -s tests -t . -p "test_*.py" -v
       - name: byte-compile
         run: python -m py_compile chat.py squawk_seal.py hooks/session_inbox.py
       - name: smoke test CLI
