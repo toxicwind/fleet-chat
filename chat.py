@@ -38,6 +38,7 @@ from fleet_addr import addressed_wait_filter
 import fleet_dag
 import fleet_delta
 import fleet_ephemeral
+import fleet_gossip
 import fleet_identity
 import fleet_log
 import fleet_presence
@@ -545,6 +546,50 @@ def cmd_react(root: Path, a):
     print(f"trace deposited on #{a.seq} in '{a.channel}' (kind={a.kind})")
 
 
+def cmd_gossip(root: Path, a):
+    """Anti-entropy pass (Demers et al. 1987): scan for seq gaps, backfill
+    recoverable ones from log.jsonl, publish a divergence digest.
+
+    Backfilled files are byte-faithful reconstructions (original frontmatter
+    + original hmac, plus a non-HMAC-covered recovered_from marker), so they
+    pass verification on the read path. Gossip never allocates seqs.
+    """
+    if a.channel:
+        gaps = fleet_gossip.scan_gaps(root, a.channel)
+        bf = fleet_gossip.backfill(root, a.channel) if a.repair else None
+        if a.json:
+            print(json.dumps({"gaps": gaps, "backfill": bf}, indent=2))
+        else:
+            missing = [m["seq"] for m in gaps["missing"]]
+            print(f"channel '{a.channel}': max_seq={gaps['max_seq']}, "
+                  f"missing={missing or 'none'}")
+            if bf:
+                print(f"  backfilled={bf['recovered'] or 'none'}, "
+                      f"unrecoverable={[m['seq'] for m in bf['unrecoverable']] or 'none'}")
+                if bf["log_error"]:
+                    print(f"  log_error={bf['log_error']}")
+        return
+    report = (fleet_gossip.anti_entropy(root, a.agent) if a.repair
+              else fleet_gossip.scan_only(root, a.agent))
+    if a.json:
+        print(json.dumps(report, indent=2))
+        return
+    print(f"gossip pass for '{a.agent}': {len(report['channels'])} channel(s)")
+    for ch, seqs in sorted(report["gaps_found"].items()):
+        print(f"  {ch}: gaps at seq {seqs}")
+    for ch, seqs in sorted(report["backfilled"].items()):
+        print(f"  {ch}: backfilled seq {seqs}")
+    for ch, items in sorted(report["unrecoverable"].items()):
+        seqs = [m["seq"] if isinstance(m, dict) else m for m in items]
+        print(f"  {ch}: UNRECOVERABLE seq {seqs}")
+    for ch, others in sorted(report["divergent"].items()):
+        print(f"  {ch}: divergent vs {others}")
+    for k, e in sorted(report["errors"].items()):
+        print(f"  error [{k}]: {e}")
+    if report["unrecoverable"] or report["errors"]:
+        raise SystemExit(3)
+
+
 def cmd_suggest_role(root: Path, a):
     """ADVISORY ONLY role suggestion from local claim traces.
 
@@ -792,6 +837,15 @@ def cmd_post(root: Path, a):
                 type="message",
                 body=body,
                 ts=timestamp,
+                # Fidelity fields: let anti-entropy backfill reconstruct a
+                # byte-identical, HMAC-verifiable message file.
+                msg_hmac=sig,
+                to=to,
+                title=title,
+                reply_to=reply,
+                status=status,
+                lamport=lamport,
+                parents=parents,
             )
         except Exception as e:  # noqa: BLE001 -- the index must not break posts
             print(f"(warning: log.jsonl append failed: {e})", file=sys.stderr)
@@ -1509,6 +1563,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("channel", help="channel to read traces from")
     s.add_argument("--as", dest="agent", required=True, help="agent asking for a suggestion")
     s.set_defaults(func=cmd_suggest_role)
+
+    s = sub.add_parser(
+        "gossip",
+        help="anti-entropy pass: scan seq gaps, backfill from log, compare digests",
+    )
+    s.add_argument("--as", dest="agent", required=True, help="agent running the pass")
+    s.add_argument("--channel", default=None, help="scope to one channel (default: all)")
+    s.add_argument("--repair", dest="repair", action="store_true", default=True,
+                   help="backfill recoverable gaps (default)")
+    s.add_argument("--no-repair", dest="repair", action="store_false",
+                   help="scan + digests only, no backfill")
+    s.add_argument("--json", action="store_true", help="print the raw report as JSON")
+    s.set_defaults(func=cmd_gossip)
 
     s = sub.add_parser("keygen", help="mint an HMAC identity key for an agent")
     s.add_argument("agent_id", help="agent id (must match fleet identity rules)")

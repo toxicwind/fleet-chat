@@ -263,13 +263,50 @@ def _recovered_text(channel: str, seq: int, rec: dict) -> tuple:
     the log record -- no wall-clock -- so repeated backfills are
     byte-identical and idempotent.
 
-    # backfill-fidelity: the log record carries only seq/ts/agent/type/
-    body.  `to` defaults to "all", `status` is the honest marker
-    "recovered", and `title` is derived from the record's type.  If
-    fleet_log ever records optional to/title/reply_to fields, prefer
-    them here and drop the -recovered suffixing.
+    Fidelity: when the log record carries the original frontmatter fields
+    plus ``msg_hmac`` (written by chat.py cmd_post), the recovered file is
+    byte-identical to the lost original -- same status/title, same hmac:
+    line -- so it passes HMAC verification on the read path.
+    ``recovered_from: log.jsonl`` is NOT part of the HMAC canonical form,
+    so the marker never breaks verification.  Records predating the
+    fidelity fields fall back to the honest "-recovered" rendering, which
+    is deliberately unverifiable (fail closed on the read path).
     """
     agent = _one_line(rec.get("agent", "unknown"))
+    body = rec.get("body", "")
+    if not isinstance(body, str):
+        body = str(body)
+    body = body.rstrip("\n") + "\n"
+    if rec.get("msg_hmac"):
+        to = _one_line(rec.get("to", "all"))
+        title = _one_line(rec.get("title", ""))
+        status = _one_line(rec.get("status", "discussion"))
+        reply_to = rec.get("reply_to")
+        lamport = rec.get("lamport", 0)
+        parents = rec.get("parents") or []
+        fname = f"{seq:04d}-{_slugify(agent)}-{_slugify(title)}.md"
+        fm = [
+            "---",
+            f"seq: {seq}",
+            f"from: {agent}",
+            f"to: {to}",
+        ]
+        if reply_to:
+            fm.append(f"reply_to: {_one_line(reply_to)}")
+        fm += [
+            f"channel: {_one_line(channel)}",
+            f"ts: {_one_line(rec.get('ts', ''))}",
+            f"status: {status}",
+            f"title: {title}",
+            f"lamport: {lamport}",
+            f"parents: [{', '.join(str(x) for x in parents)}]",
+            "recovered_from: log.jsonl",
+            f"hmac: {rec['msg_hmac']}",
+            "---",
+            "",
+        ]
+        return fname, "\n".join(fm) + body
+    # Legacy fallback: pre-fidelity records. Honest marker, unverifiable.
     rtype = _one_line(rec.get("type", "chat"))
     title = _one_line(f"{rtype}-recovered")
     fname = f"{seq:04d}-{_slugify(agent)}-{_slugify(title)}.md"
@@ -286,10 +323,7 @@ def _recovered_text(channel: str, seq: int, rec: dict) -> tuple:
         "---",
         "",
     ]
-    body = rec.get("body", "")
-    if not isinstance(body, str):
-        body = str(body)
-    return fname, "\n".join(fm) + body.rstrip("\n") + "\n"
+    return fname, "\n".join(fm) + body
 
 
 def _write_recovered(chan: Path, fname: str, content: str) -> bool:
@@ -409,7 +443,12 @@ def write_digest(root: _RootType, agent: str) -> Path:
 
 
 def read_digest(root: _RootType, agent: str) -> dict:
-    """agent's digest -> {channel: hex}.  Missing file -> {}."""
+    """agent's digest -> {channel: hex}.  Missing file -> {}.
+
+    Accepts both the wrapped format written by write_digest() and a bare
+    {channel: hex} mapping, so readers stay compatible if the on-disk
+    format is ever simplified to the bare mapping.
+    """
     path = _digest_path(root, agent)
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -417,8 +456,13 @@ def read_digest(root: _RootType, agent: str) -> dict:
         return {}
     except (OSError, ValueError) as exc:
         raise GossipError(f"unreadable digest for {agent!r}: {exc}")
-    channels = payload.get("channels")
-    if not isinstance(channels, dict):
+    if isinstance(payload, dict) and isinstance(payload.get("channels"), dict):
+        channels = payload["channels"]
+    elif isinstance(payload, dict):
+        channels = payload  # bare mapping form
+    else:
+        raise GossipError(f"malformed digest for {agent!r}: not a JSON object")
+    if not all(isinstance(k, str) and isinstance(v, str) for k, v in channels.items()):
         raise GossipError(f"malformed digest for {agent!r}: no channels map")
     return channels
 
@@ -472,6 +516,52 @@ def anti_entropy(root: _RootType, agent: str) -> dict:
                 report["unrecoverable"][ch] = bf["unrecoverable"]
             if bf["log_error"]:
                 report["errors"][ch] = f"log: {bf['log_error']}"
+        except (GossipError, OSError, fleet_log.FleetLogError) as exc:
+            report["errors"][ch] = f"{type(exc).__name__}: {exc}"
+    report["digest"] = str(write_digest(root, agent))
+    ddir = Path(root) / DIGESTS_DIR
+    try:
+        others = sorted(
+            p.stem for p in ddir.glob("*.json") if p.stem != agent
+        )
+    except OSError:
+        others = []
+    for other in others:
+        try:
+            div = compare_digests(root, agent, other)
+        except GossipError as exc:
+            report["errors"][f"digest:{other}"] = str(exc)
+            continue
+        for ch in div:
+            report["divergent"].setdefault(ch, []).append(other)
+    return report
+
+
+def scan_only(root: _RootType, agent: str) -> dict:
+    """Scan-only variant of anti_entropy(): gap scan + fresh digest +
+    divergence comparison, but NO backfill. For `gossip --no-repair`.
+
+    Same report shape as anti_entropy(); "backfilled" is always empty.
+    """
+    _check_safe_name(agent, "agent")
+    report = {
+        "agent": agent,
+        "channels": [],
+        "digest": "",
+        "gaps_found": {},
+        "backfilled": {},
+        "unrecoverable": {},
+        "divergent": {},
+        "errors": {},
+    }
+    chans = _channels(root)
+    report["channels"] = chans
+    for ch in chans:
+        try:
+            gaps = scan_gaps(root, ch)
+            if gaps["missing"]:
+                report["gaps_found"][ch] = [m["seq"] for m in gaps["missing"]]
+                report["unrecoverable"][ch] = gaps["missing"]
         except (GossipError, OSError, fleet_log.FleetLogError) as exc:
             report["errors"][ch] = f"{type(exc).__name__}: {exc}"
     report["digest"] = str(write_digest(root, agent))
@@ -573,6 +663,14 @@ def _selftest() -> None:
         assert compare_digests(root, "alice", "bob") == ["general"], \
             compare_digests(root, "alice", "bob")
         assert compare_digests(root, "alice", "nobody") == ["general", "old"]
+
+        # read_digest also accepts the bare {channel: hex} mapping form.
+        bare_hex = digest_channel(root, "general")
+        (root / DIGESTS_DIR / "bare.json").write_text(
+            json.dumps({"general": bare_hex}), encoding="utf-8")
+        assert read_digest(root, "bare") == {"general": bare_hex}
+        assert compare_digests(root, "bob", "bare") == ["old"]
+        (root / DIGESTS_DIR / "bare.json").unlink()  # probe only; keep dave's world clean
 
         # Full pass for dave: converges to bob's state, reports old's gap.
         rep = anti_entropy(root, "dave")

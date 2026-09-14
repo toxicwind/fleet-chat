@@ -196,6 +196,15 @@ def append(
     ts: Optional[str] = None,
     key: Optional[_KeyType] = None,
     fsync: bool = True,
+    # Fidelity fields (optional): carried so anti-entropy backfill can
+    # reconstruct a byte-identical, HMAC-verifiable message file.
+    msg_hmac: Optional[str] = None,
+    to: Optional[str] = None,
+    title: Optional[str] = None,
+    reply_to: Optional[str] = None,
+    status: Optional[str] = None,
+    lamport: Optional[int] = None,
+    parents: Optional[list] = None,
 ) -> int:
     """Append one record to the channel log. Returns seq.
 
@@ -219,6 +228,25 @@ def append(
         "type": type,
         "body": body,
     }
+    # Optional fidelity fields: stored verbatim when provided.
+    if msg_hmac is not None:
+        if not isinstance(msg_hmac, str):
+            raise FleetLogError("msg_hmac must be str")
+        rec["msg_hmac"] = msg_hmac
+    for label, val in (("to", to), ("title", title), ("reply_to", reply_to),
+                       ("status", status)):
+        if val is not None:
+            if not isinstance(val, str):
+                raise FleetLogError(f"{label} must be str")
+            rec[label] = val
+    if lamport is not None:
+        if not isinstance(lamport, int) or isinstance(lamport, bool):
+            raise FleetLogError("lamport must be int")
+        rec["lamport"] = lamport
+    if parents is not None:
+        if not isinstance(parents, list):
+            raise FleetLogError("parents must be a list")
+        rec["parents"] = [str(x) for x in parents]
     if key is not None:
         rec["hmac"] = _sign(rec, key)
     payload = _canon(rec) + b"\n"
