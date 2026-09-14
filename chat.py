@@ -37,6 +37,7 @@ from fleet_addr import addressed_wait_filter
 
 import fleet_dag
 import fleet_delta
+import fleet_e2ee
 import fleet_ephemeral
 import fleet_gossip
 import fleet_identity
@@ -433,6 +434,15 @@ def cmd_init(root: Path, a):
     meta_path = d / "_meta.json"
     if meta_path.exists():
         raise AgentChatError(f"channel '{a.channel}' already exists")
+    # Fleet E2EE: priv-* channels get their symmetric key at creation.
+    # Leader-side provisioning; members receive the key out of band.
+    # Fail closed: no key, no private channel -- and this happens before
+    # _meta.json is written, so a failed init leaves no half-made channel.
+    if a.channel.startswith(fleet_e2ee.PRIV_PREFIX):
+        try:
+            fleet_e2ee.ensure_channel_key(a.channel)
+        except Exception as e:
+            die(f"cannot provision key for private channel '{a.channel}': {e}")
     members = [m.strip() for m in (a.members or "").split(",") if m.strip()]
     meta_path.write_text(
         json.dumps(
@@ -787,6 +797,16 @@ def cmd_post(root: Path, a):
         parents = _dag_parents(d, seq, reply)
         # Fleet Lamport: tick the sender's clock; readers sort causally.
         lamport = fleet_time.tick(root, sender)
+        # Fleet E2EE: for priv-* channels, encrypt the body BEFORE signing
+        # and persisting. What hits disk (.md + log.jsonl) is ciphertext;
+        # the HMAC covers the ciphertext, so tampering breaks both layers.
+        # Readers verify first, then decrypt for display. No key (or no
+        # crypto lib) -> the post fails closed, never plaintext.
+        if channel.startswith(fleet_e2ee.PRIV_PREFIX):
+            try:
+                body = fleet_e2ee.encrypt_message(channel, body)
+            except Exception as e:
+                die(f"cannot encrypt for private channel '{channel}': {e}")
         fname = f"{seq:04d}-{slugify(a.sender)}-{slugify(a.title)}.md"
         fm = [
             "---",
@@ -854,12 +874,38 @@ def cmd_post(root: Path, a):
     print(f"posted #{seq} -> {a.channel}/{fname}")
 
 
-def _print_message(path: Path):
+def _print_message(path: Path, meta: dict | None = None):
+    """Print one message file. When the verified frontmatter `meta` is given
+    and the channel is priv-*, the (already HMAC-verified) ciphertext body is
+    decrypted for display. Fail closed: a missing/wrong channel key is a
+    hard error, never a silent ciphertext dump or a skip."""
     print("=" * 70)
     try:
-        print(path.read_text(encoding="utf-8").rstrip())
+        text = path.read_text(encoding="utf-8").rstrip()
     except (OSError, UnicodeError) as e:
         print(f"(could not read message {path.name}: {e})")
+        print()
+        return
+    if meta is not None and str(meta.get("channel", "")).startswith(
+        fleet_e2ee.PRIV_PREFIX
+    ):
+        channel = meta["channel"]
+        try:
+            plaintext = fleet_e2ee.decrypt_message(channel, meta.get("body", ""))
+        except Exception as e:
+            die(
+                f"cannot decrypt message {path.name} "
+                f"in private channel '{channel}': {e}"
+            )
+        # Splice the plaintext in place of the ciphertext body: the body is
+        # everything after the closing '---' line of the frontmatter.
+        lines = text.split("\n")
+        try:
+            close = lines.index("---", 1)
+        except ValueError:
+            close = len(lines) - 1
+        text = "\n".join(lines[: close + 1] + [plaintext.rstrip()])
+    print(text)
     print()
 
 
@@ -942,7 +988,7 @@ def cmd_read(root: Path, a):
         _sender_cleared(meta)
         # Fleet Lamport: fold the sender's clock into ours (max, no tick).
         fleet_time.observe(root, a.agent, fleet_time.message_lamport(meta))
-        _print_message(p)
+        _print_message(p, meta)
         shown += 1
 
     if not a.peek:
@@ -979,7 +1025,7 @@ def cmd_wait(root: Path, a):
                 _sender_cleared(meta)
                 # Fleet Lamport: fold the sender's clock into ours.
                 fleet_time.observe(root, a.agent, fleet_time.message_lamport(meta))
-                _print_message(p)
+                _print_message(p, meta)
                 delivered = True
             if delivered:
                 write_cursor(d, a.agent, max_seq(d))
@@ -1030,7 +1076,7 @@ def cmd_peek(root: Path, a):
         except fleet_identity.FleetIdentityError as e:
             die(f"identity check failed: {e}")
         _sender_cleared(meta)
-        _print_message(p)
+        _print_message(p, meta)
     if not files:
         print(f"(channel '{a.channel}' is empty)")
 

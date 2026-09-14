@@ -255,8 +255,10 @@ def _parse_file(path: Path) -> tuple[dict, str]:
 def verify_on_read(path, kd: Path | None = None) -> dict:
     """Verify a message file's hmac frontmatter field. Fail CLOSED.
 
-    Returns the parsed frontmatter dict (with 'hmac' removed) when the
-    signature checks out. Raises FleetIdentityError -- always naming the
+    Returns the parsed frontmatter dict (with 'hmac' removed) plus the
+    verified 'body' when the signature checks out. On priv-* channels the
+    body is the ciphertext -- decrypt it only after this returns.
+    Raises FleetIdentityError -- always naming the
     agent -- for: missing hmac field, unknown/empty sender, missing or
     malformed key, or digest mismatch (forgery/tampering).
     """
@@ -291,6 +293,7 @@ def verify_on_read(path, kd: Path | None = None) -> dict:
         )
     meta = dict(meta)
     meta.pop("hmac", None)
+    meta["body"] = body  # verified body (ciphertext on priv-* channels)
     return meta
 
 

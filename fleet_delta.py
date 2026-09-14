@@ -51,6 +51,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chat  # noqa: E402  -- reuse base primitives, do not re-implement
+import fleet_e2ee  # noqa: E402  -- decrypt priv-* digest snippets
 
 VECTORS_DIRNAME = ".vectors"
 DIGEST_BODY_LIMIT = 80
@@ -191,11 +192,16 @@ def advance(root: Path, agent: str, new_vector: dict[str, int]):
 
 # --- digest: the slow-path payload -------------------------------------------
 
-def _body_snippet(path: Path, limit: int = DIGEST_BODY_LIMIT) -> str:
+def _body_snippet(
+        path: Path, limit: int = DIGEST_BODY_LIMIT, channel: str = ""
+    ) -> str:
     """First `limit` chars of the message body (text after the frontmatter),
     whitespace-collapsed. The base has no body extractor, so this one lives
-    here. Bodies on priv-* channels are ciphertext (fleet_e2ee); the snippet
-    stays opaque, never a plaintext leak."""
+    here. On priv-* channels the stored body is ciphertext (fleet_e2ee): it
+    is Fernet-decrypted for the agent's own triage view (Fernet is
+    authenticated encryption, so decrypting is tamper-safe); on any decrypt
+    failure the snippet reads "(undecryptable)" -- ciphertext is never shown
+    as if it were content, and plaintext never leaks to disk."""
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
@@ -207,7 +213,13 @@ def _body_snippet(path: Path, limit: int = DIGEST_BODY_LIMIT) -> str:
             if line.strip() == "---":
                 body_start = i + 1
                 break
-    body = " ".join(" ".join(lines[body_start:]).split())
+    body = "\n".join(lines[body_start:])
+    if channel.startswith(fleet_e2ee.PRIV_PREFIX):
+        try:
+            body = fleet_e2ee.decrypt_message(channel, body.strip())
+        except Exception:
+            return "(undecryptable)"
+    body = " ".join(body.split())
     if len(body) > limit:
         return body[:limit] + "..."
     return body
@@ -238,7 +250,7 @@ def delta_digest(root: Path, agent: str, *, relevant_only: bool = True) -> list[
             seq = chat._seq_from_name(path.name)
             if seq is None:
                 continue
-            snippet = _body_snippet(path)
+            snippet = _body_snippet(path, channel=channel)
             lines.append(f"{channel} #{seq:04d} {frm}->{to} {seq} {snippet}")
     return lines
 
