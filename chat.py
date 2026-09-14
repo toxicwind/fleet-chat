@@ -458,8 +458,11 @@ def cmd_init(root: Path, a):
         ),
         encoding="utf-8",
     )
-    if a.ephemeral is not None:
-        fleet_ephemeral.mark_ephemeral(d, float(a.ephemeral))
+    # argparse always sets --ephemeral in production; test fixtures build
+    # their own namespaces, so degrade gracefully instead of AttributeError.
+    ephemeral = getattr(a, "ephemeral", None)
+    if ephemeral is not None:
+        fleet_ephemeral.mark_ephemeral(d, float(ephemeral))
     # Fleet discovery: index the channel AFTER _meta.json is durably written,
     # so a crashed init never indexes a half-made channel.
     fleet_watch.note_channel(root, a.channel)
@@ -469,7 +472,7 @@ def cmd_init(root: Path, a):
         {"channel": a.channel},
     )
     m_str = ", ".join(members) if members else "(open)"
-    eph = f" ephemeral(ttl={a.ephemeral}s)" if a.ephemeral is not None else ""
+    eph = f" ephemeral(ttl={ephemeral}s)" if ephemeral is not None else ""
     print(f"created channel '{a.channel}' at {d}  members={m_str}{eph}")
 
 

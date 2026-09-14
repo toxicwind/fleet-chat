@@ -21,7 +21,7 @@ class PathLockStoreTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         chat.cmd_init(
             self.root,
-            SimpleNamespace(channel="review", members="alice,bob", topic="Path locks"),
+            SimpleNamespace(ephemeral=None, channel="review", members="alice,bob", topic="Path locks"),
         )
         self.channel = self.root / "review"
         (self.channel / "src").mkdir()
@@ -624,7 +624,7 @@ class PathLockStoreTests(unittest.TestCase):
         lock_path = self.channel / "locks" / f"{first.lock_id}.json"
         original_bytes = lock_path.read_bytes()
 
-        with mock.patch("uuid.uuid4", return_value=SimpleNamespace(hex=first.lock_id)):
+        with mock.patch("uuid.uuid4", return_value=SimpleNamespace(ephemeral=None, hex=first.lock_id)):
             with self.assertRaises(PathLockError) as error:
                 self.store.lock("bob", ["src/different.py"], lease_seconds=60)
             self.assertEqual(error.exception.code, "PATH_LOCK_CONFLICT")

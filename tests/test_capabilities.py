@@ -20,7 +20,7 @@ class CapabilityEventTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         chat.cmd_init(
             self.root,
-            SimpleNamespace(channel="review", members="alice,bob", topic="Capability"),
+            SimpleNamespace(ephemeral=None, channel="review", members="alice,bob", topic="Capability"),
         )
         self.channel = self.root / "review"
 

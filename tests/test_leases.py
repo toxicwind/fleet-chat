@@ -27,7 +27,7 @@ class LeaseStoreTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         chat.cmd_init(
             self.root,
-            SimpleNamespace(channel="review", members="alice,bob", topic="Task board"),
+            SimpleNamespace(ephemeral=None, channel="review", members="alice,bob", topic="Task board"),
         )
         self.channel = self.root / "review"
         self.tasks = TaskStore(self.channel)

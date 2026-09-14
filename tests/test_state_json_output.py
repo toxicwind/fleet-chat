@@ -17,7 +17,7 @@ class StateJsonOutputTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         chat.cmd_init(
             self.root,
-            SimpleNamespace(
+            SimpleNamespace(ephemeral=None, 
                 channel="review",
                 members="alice,bob",
                 topic="JSON output contract",

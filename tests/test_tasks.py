@@ -65,7 +65,7 @@ class TaskStoreTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         chat.cmd_init(
             self.root,
-            SimpleNamespace(channel="review", members="alice,bob", topic="Task board"),
+            SimpleNamespace(ephemeral=None, channel="review", members="alice,bob", topic="Task board"),
         )
         self.channel = self.root / "review"
         self.store = TaskStore(self.channel)
@@ -386,7 +386,7 @@ class TaskStoreTests(unittest.TestCase):
         outside_root.mkdir()
         chat.cmd_init(
             outside_root,
-            SimpleNamespace(channel="outside", members=None, topic=None),
+            SimpleNamespace(ephemeral=None, channel="outside", members=None, topic=None),
         )
         outside_channel = outside_root / "outside"
         with self.assertRaises(TaskValidationError) as error:
@@ -407,6 +407,9 @@ class TaskStoreTests(unittest.TestCase):
             (outside_channel / "_meta.json").unlink(missing_ok=True)
             (outside_channel / ".cursors").rmdir()
             outside_channel.rmdir()
+            # cmd_init writes root-level fleet state (op log, channel index)
+            (outside_root / ".channels-index").unlink(missing_ok=True)
+            (outside_root / ".ops.jsonl").unlink(missing_ok=True)
             outside_root.rmdir()
 
     def test_load_and_show_validate_persisted_dependency_graph(self):
@@ -604,7 +607,7 @@ class TaskCommandTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         chat.cmd_init(
             self.root,
-            SimpleNamespace(channel="review", members="alice,bob", topic="Task board"),
+            SimpleNamespace(ephemeral=None, channel="review", members="alice,bob", topic="Task board"),
         )
 
     def tearDown(self):

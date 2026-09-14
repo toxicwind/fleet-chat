@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import chat
+import fleet_identity
 
 
 class _FakeStdin(io.StringIO):
@@ -50,7 +51,7 @@ class ChatRegressionTests(unittest.TestCase):
             "body_file": None,
         }
         values.update(overrides)
-        return SimpleNamespace(**values)
+        return SimpleNamespace(ephemeral=None, **values)
 
     def test_post_title_newlines_cannot_forge_frontmatter_fields(self):
         """A newline in a title must remain title content, never new metadata."""
@@ -97,7 +98,7 @@ class ChatRegressionTests(unittest.TestCase):
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            chat.cmd_channels(self.root, SimpleNamespace())
+            chat.cmd_channels(self.root, SimpleNamespace(ephemeral=None, ))
 
         rendered = output.getvalue()
         self.assertIn("alpha", rendered)
@@ -116,7 +117,7 @@ class ChatRegressionTests(unittest.TestCase):
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            chat.cmd_channels(self.root, SimpleNamespace())
+            chat.cmd_channels(self.root, SimpleNamespace(ephemeral=None, ))
 
         self.assertIn("last: #1 bob: " + ("A" * 37) + "...", output.getvalue())
 
@@ -131,7 +132,7 @@ class ChatRegressionTests(unittest.TestCase):
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            chat.cmd_channels(self.root, SimpleNamespace())
+            chat.cmd_channels(self.root, SimpleNamespace(ephemeral=None, ))
 
         self.assertIn(f"last: #1 bob: {title}", output.getvalue())
 
@@ -141,7 +142,7 @@ class ChatRegressionTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             chat.cmd_init(
                 self.root,
-                SimpleNamespace(channel="general", members="alice,bob", topic=None),
+                SimpleNamespace(ephemeral=None, channel="general", members="alice,bob", topic=None),
             )
 
         rendered = output.getvalue()
@@ -193,27 +194,42 @@ class ChatRegressionTests(unittest.TestCase):
             with self.subTest(channel=channel), self.assertRaises(chat.AgentChatError):
                 chat.cmd_init(
                     self.root,
-                    SimpleNamespace(channel=channel, members=None, topic=None),
+                    SimpleNamespace(ephemeral=None, channel=channel, members=None, topic=None),
                 )
             self.assertFalse((self.root / channel).exists())
+
+    def _write_signed(self, channel, filename, seq, sender, to, title, body="body"):
+        """Hand-write a message file with a valid v1 HMAC.
+
+        Lets tests control on-disk layout (e.g. seq-out-of-order filenames)
+        while satisfying verify_on_read's fail-closed signature check.
+        """
+        ts = "2026-09-14T00:00:00+00:00"
+        canon = fleet_identity.canonical_message(
+            seq=seq, sender=sender, to=to, reply_to="", channel="general",
+            ts=ts, status="discussion", title=title, body=body,
+        )
+        hmac = fleet_identity.sign(sender, canon)
+        (channel / filename).write_text(
+            f"---\nseq: {seq}\nfrom: {sender}\nto: {to}\nchannel: general\n"
+            f"ts: {ts}\nstatus: discussion\ntitle: {title}\n"
+            f"hmac: {hmac}\n---\n{body}\n",
+            encoding="utf-8",
+        )
 
     def test_read_preserves_sequence_order_and_advances_cursor(self):
         """Unread messages are rendered in sequence order and advance the cursor."""
         channel = self._channel("general")
-        (channel / "0002-bob-second.md").write_text(
-            "---\nseq: 2\nfrom: bob\nto: alice\ntitle: Second\n---\nbody\n",
-            encoding="utf-8",
-        )
-        (channel / "0001-bob-first.md").write_text(
-            "---\nseq: 1\nfrom: bob\nto: alice\ntitle: First\n---\nbody\n",
-            encoding="utf-8",
-        )
+        # Written out of order on disk; the read path must still render by
+        # seq (parsed from the filename) and verify each signature.
+        self._write_signed(channel, "0002-bob-second.md", 2, "bob", "alice", "Second")
+        self._write_signed(channel, "0001-bob-first.md", 1, "bob", "alice", "First")
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             chat.cmd_read(
                 self.root,
-                SimpleNamespace(
+                SimpleNamespace(ephemeral=None, 
                     channel="general", agent="alice", all=False, peek=False
                 ),
             )
@@ -234,7 +250,7 @@ class ChatRegressionTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             chat.cmd_peek(
                 self.root,
-                SimpleNamespace(channel="general", n=0),
+                SimpleNamespace(ephemeral=None, channel="general", n=0),
             )
 
         self.assertEqual(output.getvalue(), "")
@@ -242,7 +258,7 @@ class ChatRegressionTests(unittest.TestCase):
     def test_claim_rejects_internal_channel_files(self):
         """Claim must not rename channel metadata or cursor files."""
         channel = self._channel("general")
-        args = SimpleNamespace(channel="general", task="_meta.json", agent="mallory")
+        args = SimpleNamespace(ephemeral=None, channel="general", task="_meta.json", agent="mallory")
 
         with self.assertRaises(chat.AgentChatError):
             chat.cmd_claim(self.root, args)
@@ -258,7 +274,7 @@ class ChatRegressionTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(chat.AgentChatError):
                 chat.cmd_claim(
                     self.root,
-                    SimpleNamespace(channel="general", task=name, agent="mallory"),
+                    SimpleNamespace(ephemeral=None, channel="general", task=name, agent="mallory"),
                 )
             self.assertTrue(path.exists())
             self.assertEqual(path.read_text(encoding="utf-8"), "original")
@@ -274,7 +290,7 @@ class ChatRegressionTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as raised:
             chat.cmd_claim(
                 self.root,
-                SimpleNamespace(channel="general", task=source.name, agent="mallory"),
+                SimpleNamespace(ephemeral=None, channel="general", task=source.name, agent="mallory"),
             )
 
         self.assertEqual(raised.exception.code, 3)
@@ -289,7 +305,7 @@ class ChatRegressionTests(unittest.TestCase):
 
         chat.cmd_claim(
             self.root,
-            SimpleNamespace(channel="general", task=source.name, agent="alice"),
+            SimpleNamespace(ephemeral=None, channel="general", task=source.name, agent="alice"),
         )
 
         self.assertFalse(source.exists())
