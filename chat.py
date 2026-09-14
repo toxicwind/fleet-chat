@@ -967,6 +967,7 @@ def cmd_wait(root: Path, a):
         remaining = max(0.0, deadline - time.time())
         found = _fw.wait_for_new_messages(d, cur, remaining)
         if found:
+            delivered = False
             for p in found:
                 meta = parse_frontmatter(p)
                 if not a.all and not is_relevant(meta, a.agent):
@@ -979,8 +980,16 @@ def cmd_wait(root: Path, a):
                 # Fleet Lamport: fold the sender's clock into ours.
                 fleet_time.observe(root, a.agent, fleet_time.message_lamport(meta))
                 _print_message(p)
-            write_cursor(d, a.agent, max_seq(d))
-            return
+                delivered = True
+            if delivered:
+                write_cursor(d, a.agent, max_seq(d))
+                return
+            # Only irrelevant messages arrived: advance the in-memory scan
+            # cursor past them and keep waiting for something relevant.
+            # The on-disk cursor is untouched -- a timed-out wait must not
+            # silently consume messages the agent never saw.
+            cur = max_seq(d)
+            continue
         # found == [] means the timeout expired with no new relevant messages.
         print(
             f"(timeout after {a.timeout}s: no new messages for {a.agent} in '{a.channel}')",
