@@ -237,7 +237,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-        if path == "/squawk-feed/ping":
+        if path in ("/squawk-feed/ping", "/squawk-feed/seq"):  # /seq kept for the relay agent
             with self.server.state.cond:
                 high = self.server.state.high
             self._send_json(200, {"seq": high})
