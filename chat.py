@@ -35,10 +35,12 @@ from pathlib import Path
 
 from fleet_addr import addressed_wait_filter
 
+import fleet_dag
 import fleet_ephemeral
 import fleet_identity
 import fleet_log
 import fleet_roster
+import fleet_time
 import fleet_wait
 import fleet_watch
 
@@ -612,6 +614,44 @@ def _read_body(a) -> str:
     return data
 
 
+def _resolve_reply_target(d: Path, reply: str):
+    """Resolve a --reply value to a parent message id (or None)."""
+    m = re.fullmatch(r"#?(\d+)", reply.strip())
+    if not m:
+        return None  # name-style reply; no id join
+    want = int(m.group(1))
+    for p in message_files(d):
+        if _seq_from_name(p.name) == want:
+            return fleet_dag.msg_id(p)
+    return None
+
+
+def _dag_parents(d: Path, seq: int, reply):
+    """Fleet DAG parent ids for a new message: [reply_target?, previous].
+
+    Must run INSIDE the seq lock, after _next_seq: the "previous message" id
+    is only stable while we hold it. Genesis (seq 1) gets [].
+    """
+    prev_id = None
+    if seq > 1:
+        prev_path = None
+        prev_seq = 0
+        for p in message_files(d):
+            ps = _seq_from_name(p.name)
+            if ps is not None and ps < seq and ps > prev_seq:
+                prev_seq, prev_path = ps, p
+        if prev_path is not None:
+            prev_id = fleet_dag.msg_id(prev_path)
+    target_id = _resolve_reply_target(d, reply) if reply else None
+    # Dedupe preserving wire order: a reply to the immediately-previous
+    # message would otherwise list the same parent twice.
+    parents = []
+    for x in (target_id, prev_id):
+        if x and x not in parents:
+            parents.append(x)
+    return parents
+
+
 def cmd_post(root: Path, a):
     d = require_channel(root, a.channel)
     body = _read_body(a)
@@ -625,6 +665,10 @@ def cmd_post(root: Path, a):
     lock = _acquire_lock(d)
     try:
         seq = _next_seq(d)
+        # Fleet DAG: parent ids, computed under the seq lock (race-free).
+        parents = _dag_parents(d, seq, reply)
+        # Fleet Lamport: tick the sender's clock; readers sort causally.
+        lamport = fleet_time.tick(root, sender)
         fname = f"{seq:04d}-{slugify(a.sender)}-{slugify(a.title)}.md"
         fm = [
             "---",
@@ -655,6 +699,8 @@ def cmd_post(root: Path, a):
             f"ts: {timestamp}",
             f"status: {status}",
             f"title: {title}",
+            f"lamport: {lamport}",
+            f"parents: [{', '.join(parents)}]",
             f"hmac: {sig}",
             "---",
             "",
