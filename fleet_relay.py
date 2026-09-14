@@ -11,26 +11,30 @@ alongside breaker/shingle/agent1/yote). Messages the relay posts are
 signed by that identity; the human whose message it is travels in
 frontmatter as `relayed_from: muse-side-chat` + `human: <name>`.
 
-SEAL HOOK POINTS (for the sealed-transmission worker)
------------------------------------------------------
-The sealed envelope format (NaCl sealed-box to recipient public keys,
-ciphertext-only on the channel, HMAC covering the envelope) lands HERE
-when it is ready. Two functions, one contract:
+SEALED TRANSMISSION (squawk_seal.py, landed 2026-09-14)
+--------------------------------------------------
+Sealed envelopes are NaCl sealed-boxes to a recipient's seal public key,
+wrapped by squawk_seal.build_envelope() into the message body between
+-----BEGIN SQUAWK SEALED MESSAGE----- / -----END ...----- markers, with
+`to:`/`alg:`/`burn:` headers. The post path HMAC-covers the envelope like
+any other body. Two functions, one contract:
 
-* seal_for_channel(channel, plaintext) -- relay-in calls this on the
-  human text BEFORE the post path. Currently the identity function
-  (returns plaintext unchanged). When the sealed envelope format lands,
-  implement NaCl sealed-box to the channel members' keys and return the
-  envelope string; the post path HMAC-covers it like any other body.
+* seal_for_channel(channel, plaintext) -- relay-in calls this on the human
+  text BEFORE the post path. Sealing is per-recipient, not per-channel, and
+  relay-in carries human chat text in the clear on the channel by design,
+  so this stays the identity function. (Explicit secret posts use
+  squawk_seal.py directly.)
 * unseal_message(channel, body, identity, key_dir) -- relay-out and
-  squawk-feed call this on every message body. Currently returns
-  (body, False). When sealed transmission lands, unseal with the relay
-  identity's private key and return (plaintext, True); on failure raise
-  SealError so callers mark the record sealed/unreadable instead of
-  leaking ciphertext.
+  squawk-feed call this on every message body. Returns (body, False) when
+  the body carries no envelope; (plaintext, True) when the envelope is
+  addressed to `identity` and opens with the identity's seal private key
+  (<identity>.seal.key in the keys dir). Raises SealError when an envelope
+  is present but cannot be opened (missing/wrong key, tampered
+  ciphertext) -- callers mark the record sealed/unreadable, never leaking
+  ciphertext.
 
-Do NOT duplicate these functions elsewhere: the seal worker wires its
-implementation here so every relay surface seals/unseals identically.
+Do NOT duplicate these functions elsewhere: every relay surface
+seals/unseals through this module identically.
 """
 
 from __future__ import annotations
@@ -82,29 +86,51 @@ def resolve_key_dir(cli_value: str | None = None, root=None) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Seal hook points (identity until the sealed envelope format lands)
+# Sealed transmission (squawk_seal.py)
 # ---------------------------------------------------------------------------
 
 
 def seal_for_channel(channel: str, plaintext: str) -> str:
-    """SEAL HOOK POINT -- see module docstring.
+    """Relay-in pre-post hook: returns the body to HMAC-sign and persist.
 
-    Called by relay-in before the post path. Returns the body that will be
-    HMAC-signed and persisted. Today: plaintext unchanged.
+    Sealing is per-recipient (NaCl sealed-box), not per-channel, and
+    relay-in carries human chat text in the clear on the channel by
+    design -- so this is the identity function. Explicit secret posts
+    use squawk_seal.py directly.
     """
-    # Seal worker: implement NaCl sealed-box to the channel members' keys
-    # here and return the envelope string. Keep the return a str.
     return plaintext
 
 
 def unseal_message(channel: str, body: str, identity: str, key_dir: Path):
-    """SEAL HOOK POINT -- see module docstring.
+    """Unseal a squawk_seal envelope addressed to the relay identity.
 
-    Returns (plaintext, sealed: bool). Today: (body, False).
+    Returns (plaintext, True) when the body carries a sealed envelope for
+    `identity` that opens with the identity's seal private key
+    (<identity>.seal.key under key_dir); (body, False) when the body
+    carries no envelope. Raises SealError when an envelope is present but
+    cannot be opened (missing key, wrong key, tampered ciphertext) --
+    fail closed, never leak ciphertext.
     """
-    # Seal worker: unseal with the relay identity's private key; return
-    # (plaintext, True); raise SealError on failure.
-    return body, False
+    import squawk_seal
+    try:
+        env = squawk_seal.parse_envelope(body)
+    except ValueError:
+        return body, False  # no sealed envelope in this body
+    if env["to"] != identity:
+        raise SealError(
+            f"sealed envelope is for {env['to']!r}, not {identity!r}")
+    try:
+        priv = squawk_seal.load_private_key(identity, keys_dir=key_dir)
+    except (RuntimeError, FileNotFoundError, OSError) as e:
+        raise SealError(f"no seal private key for {identity!r}: {e}")
+    try:
+        plaintext = squawk_seal.unseal_bytes(priv, env["ciphertext"])
+    except ValueError as e:
+        raise SealError(str(e))
+    try:
+        return plaintext.decode("utf-8"), True
+    except UnicodeDecodeError as e:
+        raise SealError(f"unsealed payload is not valid UTF-8: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +228,13 @@ def build_relay_record(path: Path, *, channel: str, identity: str, key_dir: Path
 
     rec["body"] = verified.get("body", "")
     rec["hmac_version"] = verified.get("hmac_version")
+    if (rec["relayed_from"] is not None or rec["human"] is not None) \
+            and rec["hmac_version"] != "v3":
+        # Relay metadata present but NOT HMAC-covered: a pre-v3 message
+        # carrying unsigned frontmatter, or tampering. Attribution fails
+        # closed -- the fields are dropped; the signature verdict stands.
+        rec["relayed_from"] = None
+        rec["human"] = None
     gate = roster_status(sender)
     if gate is not None:
         rec["signature"] = gate
@@ -240,10 +273,12 @@ def _finalize_record(rec: dict) -> dict:
     return rec
 
 
-def expected_ws_auth(identity: str, nonce: str, key_dir: Path) -> str:
-    """Expected WS auth response: HMAC-SHA256(nonce, identity key), hex.
+def ensure_keys_env(root=None) -> None:
+    """Make FLEET_KEYS_DIR resolve for import-time readers (squawk_seal).
 
-    The client proves the relay identity by computing the same value from
-    the key file; the server recomputes it with fleet_identity.sign.
+    Never overrides an explicit setting. The service definition should
+    set FLEET_KEYS_DIR=/home/toxic/.shingle/squawk-root/keys; this is the
+    fallback so <root>/keys wins over the stale compiled-in default.
     """
-    return fleet_identity.sign(identity, nonce.encode("utf-8"), kd=key_dir)
+    if "FLEET_KEYS_DIR" not in os.environ:
+        os.environ["FLEET_KEYS_DIR"] = str(resolve_key_dir(None, root=root))

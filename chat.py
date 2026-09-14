@@ -859,6 +859,10 @@ def _post_message(root: Path, channel: str, *, body: str, sender: str,
                 # under the seq lock, computed just above).
                 lamport=lamport,
                 parents=parents,
+                # v3: relay metadata is HMAC-covered when present, so
+                # tampering with relayed_from/human invalidates the sig.
+                relayed_from=(extra_frontmatter or {}).get("relayed_from"),
+                human=(extra_frontmatter or {}).get("human"),
             ),
             kd=key_dir,
         )
@@ -948,6 +952,7 @@ def cmd_relay_in(root: Path, a):
     """
     identity = fleet_relay.resolve_identity(a.identity)
     key_dir = fleet_relay.resolve_key_dir(a.key_dir, root=root)
+    fleet_relay.ensure_keys_env(root=root)
     text = _relay_read_text(a)
     # Seal hook point: when the sealed envelope format lands,
     # seal_for_channel seals the human text to the channel members' keys.
@@ -973,6 +978,7 @@ def cmd_relay_out(root: Path, a):
     """
     d = require_channel(root, a.channel)
     key_dir = fleet_relay.resolve_key_dir(a.key_dir, root=root)
+    fleet_relay.ensure_keys_env(root=root)
     identity = fleet_relay.resolve_identity(a.identity)
     top = a.since
     for p in message_files(d):
@@ -987,24 +993,20 @@ def cmd_relay_out(root: Path, a):
 
 
 def cmd_squawk_feed(root: Path, a):
-    """Run the squawk-feed writer daemon (fleet channel -> zipfs-vault)."""
+    """Run the squawk-feed fat long-poll service (bearer-authed).
+
+    Token comes from the SQUAWK_FEED_TOKEN env var (pitchfork service
+    env); the server refuses to start without it. Never a CLI flag.
+    """
     import squawk_feed
-    argv = [
+    squawk_feed.main([
         "--root", str(root),
         "--channel", a.channel,
+        "--bind", a.bind,
+        "--port", str(a.port),
         "--identity", fleet_relay.resolve_identity(a.identity),
         "--key-dir", str(fleet_relay.resolve_key_dir(a.key_dir, root=root)),
-        "--via", a.via or os.environ.get("ZIPFS_VIA") or "rclone",
-    ]
-    if a.zipfs_dir:
-        argv += ["--zipfs-dir", a.zipfs_dir]
-    if a.since is not None:
-        argv += ["--since", str(a.since)]
-    if a.cursor_file:
-        argv += ["--cursor-file", a.cursor_file]
-    if a.pull_first:
-        argv += ["--pull-first"]
-    squawk_feed.main(argv)
+    ])
 
 
 def _record_op(root: Path, channel: str | None, kind: str, actor: str,
@@ -2115,41 +2117,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser(
         "squawk-feed",
-        help="run the squawk-feed writer daemon (fleet channel -> zipfs-vault)",
+        help="run the squawk-feed fat long-poll service (bearer-authed)",
     )
     s.add_argument("--channel", default="fleet",
-                   help="channel to watch (default: fleet)")
+                   help="channel to serve (default: fleet)")
+    s.add_argument("--bind", default="127.0.0.1", help="bind address")
+    s.add_argument("--port", type=int, default=25131,
+                   help="port to serve (default: 25131)")
     s.add_argument(
         "--identity", default=None,
-        help="relay identity for unseal "
+        help="relay identity used to unseal "
              "(default: $SQUAWK_RELAY_IDENTITY or 'relay')",
     )
     s.add_argument(
         "--key-dir", default=None,
         help="fleet keys dir (default: $FLEET_KEYS_DIR, "
              "else <root>/keys if present)",
-    )
-    s.add_argument(
-        "--zipfs-dir", default=None,
-        help="zipfs-vault skill dir "
-             "(default: ~/workspace/skills/zipfs-vault)",
-    )
-    s.add_argument(
-        "--via", default=None,
-        help="vault transport: rclone | gws (default: $ZIPFS_VIA or rclone)",
-    )
-    s.add_argument(
-        "--since", type=int, default=None,
-        help="start cursor (default: from vault + saved cursor)",
-    )
-    s.add_argument(
-        "--cursor-file", default=None,
-        help="persist writer cursor here "
-             "(default: ~/.local/state/squawk-feed/<channel>.cursor)",
-    )
-    s.add_argument(
-        "--pull-first", action="store_true",
-        help="pull before every put batch (another writer may sync)",
     )
     s.set_defaults(func=cmd_squawk_feed)
 

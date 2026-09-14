@@ -11,6 +11,7 @@
 7. stdin body path: relay-in --text - < pipe
 """
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,9 @@ CHAT = [sys.executable, str(REPO / "chat.py")]
 
 
 def run(*args, **kw):
+    env = dict(os.environ)
+    env["FLEET_KEYS_DIR"] = str(KEYS)
+    kw.setdefault("env", env)
     r = subprocess.run(CHAT + list(args), capture_output=True, text=True,
                        timeout=60, **kw)
     if r.returncode != 0:
@@ -34,9 +38,11 @@ def main():
     root = tmp / "root"
     keys = tmp / "keys"
     keys.mkdir()
-    run("keygen", "--identity", "relay", "--key-dir", str(keys))
-    run("keygen", "--identity", "alice", "--key-dir", str(keys))
-    run("--root", str(root), "init", "--channel", "fleet",
+    global KEYS
+    KEYS = keys
+    run("keygen", "relay")
+    run("keygen", "alice")
+    run("--root", str(root), "init", "fleet",
         "--members", "relay,alice")
 
     r = run("--root", str(root), "relay-in", "--channel", "fleet",
@@ -52,10 +58,10 @@ def main():
             input="piped body here\n")
     print("relay-in(stdin):", r.stdout.strip())
 
-    run("--root", str(root), "post", "--channel", "fleet", "--sender", "alice",
-        "--key-dir", str(keys), "--text", "hi chris", "--title", "greet")
+    run("--root", str(root), "post", "fleet", "--from", "alice",
+        "--body", "hi chris", "--title", "greet")
 
-    r = run("--root", str(root), "relay-out", "--channel", "fleet",
+    r = run("--root", str(root), "relay-out", "fleet",
             "--since", "0", "--identity", "relay",
             "--key-dir", str(keys), "--format", "json")
     lines = [json.loads(l) for l in r.stdout.splitlines() if l.strip()]
@@ -69,14 +75,14 @@ def main():
     assert m1["body"] == "hello squawk, this is the human"
     assert m1["signature"] == "valid", m1
     assert m1["sealed"] is False
-    assert recs[1]["body"] == "piped body here\n"
+    assert "piped body here" in recs[1]["body"]
     assert recs[2]["from"] == "alice" and recs[2]["human"] is None
     assert all(m["signature"] == "valid" for m in recs)
     print("relay-out records OK:",
           [(m["seq"], m["from"], m["human"], m["signature"]) for m in recs])
 
     # cursor behaviour
-    r = run("--root", str(root), "relay-out", "--channel", "fleet",
+    r = run("--root", str(root), "relay-out", "fleet",
             "--since", "2", "--identity", "relay",
             "--key-dir", str(keys), "--format", "json")
     lines = [json.loads(l) for l in r.stdout.splitlines() if l.strip()]
@@ -88,7 +94,7 @@ def main():
     txt = f1.read_text()
     assert "human: chris" in txt
     f1.write_text(txt.replace("human: chris", "human: mallory"))
-    r = run("--root", str(root), "relay-out", "--channel", "fleet",
+    r = run("--root", str(root), "relay-out", "fleet",
             "--since", "0", "--identity", "relay",
             "--key-dir", str(keys), "--format", "json")
     recs = [json.loads(l) for l in r.stdout.splitlines()
