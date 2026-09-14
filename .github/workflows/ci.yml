@@ -32,9 +32,11 @@ jobs:
         # without key material, which CI runners don't have.
         run: python -m unittest discover -s tests -t . -p "test_*.py" -v
       - name: byte-compile
-        run: python -m py_compile chat.py hooks/session_inbox.py
+        run: python -m py_compile chat.py squawk_seal.py hooks/session_inbox.py
       - name: smoke test CLI
         run: python chat.py --help
+      - name: sealed-secret selftest
+        run: python squawk_seal.py selftest
 
   codeql:
     name: CodeQL
