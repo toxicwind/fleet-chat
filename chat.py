@@ -830,6 +830,10 @@ def cmd_post(root: Path, a):
                 status=status,
                 title=title,
                 body=body,
+                # v2: lamport + parents are HMAC-covered (both in scope
+                # under the seq lock, computed just above).
+                lamport=lamport,
+                parents=parents,
             ),
         )
         fm += [
