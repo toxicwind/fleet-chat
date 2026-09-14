@@ -15,7 +15,7 @@ allocated under a filesystem lock (atomic `mkdir`) so two sessions can never cla
 the same number -- the exact race that produced duplicate "seq 11" files in the
 hand-rolled prototype.
 
-Commands: init | channels | roster | post | read | wait | peek | claim | lock | check | unlock | recover | recover-pending | task | state | compact | event
+Commands: init | channels | roster | post | read | wait | peek | claim | lock | check | unlock | recover | recover-pending | task | state | compact | event | keygen
 Run `python chat.py <command> --help` for flags.
 """
 
@@ -34,6 +34,9 @@ import time
 from pathlib import Path
 
 from fleet_addr import addressed_wait_filter
+
+import fleet_identity
+import fleet_roster
 
 # --- root + small helpers ----------------------------------------------------
 
@@ -437,6 +440,14 @@ def cmd_init(root: Path, a):
     print(f"created channel '{a.channel}' at {d}  members={m_str}")
 
 
+def cmd_keygen(root: Path, a):
+    try:
+        key_path = fleet_identity.keygen(a.agent_id, force=a.force)
+    except fleet_identity.FleetIdentityError as e:
+        die(str(e))
+    print(f"key written for '{a.agent_id}' at {key_path}  (keep it secret; 0600)")
+
+
 def cmd_channels(root: Path, a):
     if not root.exists():
         print(f"(no channels yet under {root})")
@@ -576,11 +587,28 @@ def cmd_post(root: Path, a):
         ]
         if reply is not None:
             fm.append(f"reply_to: {reply}")
+        # Fleet identity: HMAC-sign the canonical message bytes. sign() raises
+        # FleetIdentityError when the sender has no key -> the post fails closed.
+        sig = fleet_identity.sign(
+            sender,
+            fleet_identity.canonical_message(
+                seq=seq,
+                sender=sender,
+                to=to,
+                reply_to=reply,
+                channel=channel,
+                ts=timestamp,
+                status=status,
+                title=title,
+                body=body,
+            ),
+        )
         fm += [
             f"channel: {channel}",
             f"ts: {timestamp}",
             f"status: {status}",
             f"title: {title}",
+            f"hmac: {sig}",
             "---",
             "",
         ]
@@ -597,6 +625,21 @@ def _print_message(path: Path):
     except (OSError, UnicodeError) as e:
         print(f"(could not read message {path.name}: {e})")
     print()
+
+
+def _sender_cleared(meta: dict) -> None:
+    """Roster revocation gate: call after HMAC verification on a read path.
+
+    Rejects revoked senders outright. Unknown senders are rejected once the
+    roster is enrolled (non-empty); an empty roster means bootstrap mode where
+    HMAC alone is the gate.
+    """
+    sender = meta.get("from", "")
+    rec = fleet_roster.lookup(sender)
+    if rec is not None and rec.get("revoked"):
+        die(f"identity check failed: sender '{sender}' is revoked")
+    if rec is None and fleet_roster.list_all():
+        die(f"identity check failed: sender '{sender}' is not enrolled in the fleet roster")
 
 
 def cmd_read(root: Path, a):
@@ -628,6 +671,11 @@ def cmd_read(root: Path, a):
         meta = parse_frontmatter(p)
         if not a.all and not is_relevant(meta, a.agent):
             continue
+        try:
+            meta = fleet_identity.verify_on_read(p)
+        except fleet_identity.FleetIdentityError as e:
+            die(f"identity check failed: {e}")
+        _sender_cleared(meta)
         _print_message(p)
         shown += 1
 
@@ -710,6 +758,11 @@ def cmd_peek(root: Path, a):
     files = [heapq.heappop(top_n)[1] for _ in range(len(top_n))]
 
     for p in files:
+        try:
+            meta = fleet_identity.verify_on_read(p)
+        except fleet_identity.FleetIdentityError as e:
+            die(f"identity check failed: {e}")
+        _sender_cleared(meta)
         _print_message(p)
     if not files:
         print(f"(channel '{a.channel}' is empty)")
@@ -1199,6 +1252,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--members", help="comma-separated agent names")
     s.add_argument("--topic", help="initial topic of the channel")
     s.set_defaults(func=cmd_init)
+
+    s = sub.add_parser("keygen", help="mint an HMAC identity key for an agent")
+    s.add_argument("agent_id", help="agent id (must match fleet identity rules)")
+    s.add_argument("--force", action="store_true", help="rotate: replace existing key")
+    s.set_defaults(func=cmd_keygen)
 
     s = sub.add_parser("channels", help="list channels")
     s.set_defaults(func=cmd_channels)
