@@ -25,11 +25,17 @@ MCP bridge.
   <channel>/.vectors/               # per-agent delta summary vectors (fleet_delta)
   .channels-index                   # append-only channel discovery (fleet_watch)
   .clocks/<agent>                   # Lamport clocks (fleet_time)
-  .presence/<agent>.json            # liveness hints, NOT identity (fleet_presence)
+  .heartbeats/<agent>.json          # liveness hints, NOT identity (fleet_presence)
+  .peers/<agent>.json               # SWIM peer views (fleet_presence)
+  .suspects/<peer>.json             # suspicion marks (fleet_presence)
+  .cursors/<agent>                  # read cursors (chat.py, fleet_delta)
 ```
 
-One Python file (`chat.py`, stdlib only) plus `fleet_*.py` modules, also
-stdlib only. The base's guarantees are kept: atomic seq allocation under a
+One Python file (`chat.py`, stdlib only) plus `fleet_*.py` modules, stdlib
+only with one exception: `fleet_e2ee.py` needs the third-party
+`cryptography` package for `priv-*` channels (declared in
+`pyproject.toml`; `pip install cryptography` if it isn't importable).
+The base's guarantees are kept: atomic seq allocation under a
 mkdir lock, zero-token `wait` (inotify fast path via `fleet_wait`, poll
 fallback), per-agent cursors, and Markdown files as the source of truth.
 Every fleet index (`log.jsonl`, `.ops.jsonl`, vectors, traces) is a
@@ -75,6 +81,10 @@ Fernet channel key, `post` encrypts before HMAC-signing, and `read`/`wait`/
 `peek` verify-then-decrypt. Ciphertext is what's at rest; tampering fails
 closed at the HMAC layer before decryption is attempted.
 
+Prerequisite: `pip install cryptography` (also declared in
+`pyproject.toml`). Without it, every `priv-*` operation fails closed with
+an actionable error — it never degrades to plaintext.
+
 ## Provenance I — the seven repositories
 
 The fork was chosen after a read-only, code-level comparison of seven
@@ -87,7 +97,7 @@ re-implemented file-based, never the dependency stack.
 
 | Repository | What was taken | Where it lives |
 |---|---|---|
-| `n24q02m/agent-chat-plugin` | the base: file transport, atomic seq, cursors, zero-token wait | `chat.py` (pristine at `914d1c0`) |
+| `n24q02m/agent-chat-plugin` | the base: file transport, atomic seq, cursors, zero-token wait | `chat.py` (upstream base, extended by the fleet commits below) |
 | `weijiafu14/agent-chatroom` | append-only `messages.jsonl` room log (their `scripts/coord_write.py:373-374`); racy bits left behind | `fleet_log.py` → `<channel>/log.jsonl` |
 | `WarrenSchultz/chatroom-mcp` | atomic-claim task board | `fleet_tasks.py` (base `TaskStore`/`LeaseStore`, unchanged semantics) |
 | `dipakkr/agentsync` | identity roster: `member.register` events folded into per-agent docs (`src/hub/store.js`, `src/mcp/server.js:50-53`), presence as heartbeat fold (`src/hub/server.js:212-229`) | `fleet_roster.py` (single file at `~/.shingle/roster`, revocation as first-class state) |
@@ -95,13 +105,17 @@ re-implemented file-based, never the dependency stack.
 | `michaelwang123/arthas` | room-key model: one symmetric key per room, held by every member, encrypt-before-write | `fleet_e2ee.py` — relay server, web client, Docker all stripped |
 | `kotinder/roomcomm` | lifecycle/janitor: `create_room` (`app/main.py:372-428`), wall-clock expiry in an explicit maintenance pass (`app/main.py:244-248`), bounded rooms (`app/main.py:161`) | `fleet_ephemeral.py` — `mark-ephemeral`, `gc` archives-then-reaps; hosted REST not used |
 
+All `src/`, `cmd/`, `internal/`, `app/`, and `scripts/` paths in the table
+above live in the *donor* repositories, not in this one — this repo is
+Python-only (`chat.py`, `fleet_*.py`).
+
 What was *not* taken, on purpose: every server, WebSocket, REST API, Docker
 setup, Node runtime, and turn-taking/arbiter model in the six donors. The
 WhatsApp-side agent has a filesystem and nothing else.
 
 ## Provenance II — the ten papers
 
-A paper hunt screened 59 candidates and selected 12; ten were implemented
+A paper hunt screened dozens of candidates; ten were implemented
 as working, tested code below. Each module docstring names its paper and
 states what was stolen and what was left behind.
 
@@ -130,11 +144,11 @@ enforced.
 
 Exercised 2026-09-14, not asserted:
 
-- **E2EE (7/7):** key provisioning, encrypted post accepted, no plaintext
+- **E2EE:** key provisioning, encrypted post accepted, no plaintext
   in `.md` or `log.jsonl`, digest shows decrypted snippet, read
   verify-then-decrypt, ciphertext tampering rejected at HMAC, keyless post
   refused with no plaintext fallback.
-- **HMAC v2 (7/7):** new posts verify as v2; Lamport/parent tampering or
+- **HMAC v2:** new posts verify as v2; Lamport/parent tampering or
   stripping rejected; legacy v1 and transitional messages still verify as
   v1; DAG message IDs stable across the upgrade.
 - **Anti-entropy:** post → delete `.md` → `gossip --repair` → recovered
