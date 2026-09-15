@@ -32,7 +32,7 @@ Specification = "https://github.com/n24q02m/agent-chat-plugin/blob/main/SPEC.md"
 agent-chat = "chat:main"
 
 [tool.setuptools]
-py-modules = ["chat"]
+py-modules = ["chat", "chat_core", "chat_commands", "chat_parser"]
 packages = ["agent_chat"]
 
 [tool.semantic_release]
