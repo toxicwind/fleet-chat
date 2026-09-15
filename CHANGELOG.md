@@ -2,6 +2,30 @@
 
 <!-- version list -->
 
+## v0.8.0 (2026-09-15)
+
+### Chores
+
+- Token-scrub gitignore protection (2026-09-14)
+  ([`9ac084f`](https://github.com/toxicwind/squawk/commit/9ac084f77034cc53b251293ef91ad3dfebfd05ea))
+
+### Documentation
+
+- **readme**: Aesthetic, accuracy-checked rewrite of main + relay READMEs
+  ([`cfb4de2`](https://github.com/toxicwind/squawk/commit/cfb4de2433134578c8797116de30f836468dbee5))
+
+- **relay**: Commit divergent ws draft, marked SUPERSEDED in TRANSPORT_STATUS.md
+  ([`48d8d85`](https://github.com/toxicwind/squawk/commit/48d8d85f7bd6db9b9396729d6860e64dade2f1ed))
+
+- **relay**: TRANSPORT_STATUS.md — mark live/retired/divergent Squawk transports
+  ([`2ddb32e`](https://github.com/toxicwind/squawk/commit/2ddb32e7c2881f186e79a7fc00aa431009d2e173))
+
+### Features
+
+- **chat**: First-class papers command (arXiv/alphaXiv legs) + ruff 0.15.7 facade fix
+  ([`54b297c`](https://github.com/toxicwind/squawk/commit/54b297c17dc93a9776ce119dffb42d9d14cefad7))
+
+
 ## v0.7.4 (2026-09-14)
 
 ### Bug Fixes
