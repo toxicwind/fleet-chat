@@ -181,6 +181,28 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--body-file", help="read message body from file")
     s.set_defaults(func=chat_commands.cmd_post)
 
+    s = sub.add_parser(
+        "papers",
+        help="search papers (arXiv/alphaXiv legs) and post a digest message",
+    )
+    s.add_argument("--query", help="keyword search across the paper legs")
+    s.add_argument("--id", help="resolve one paper by arXiv ID or DOI")
+    s.add_argument("--max", type=int, default=5,
+                   help="max papers in the digest (default: 5)")
+    s.add_argument("--timeout", type=int, default=8,
+                   help="per-leg fail-fast timeout, seconds (default: 8)")
+    s.add_argument("--sort", default="relevance",
+                   choices=["relevance", "date"],
+                   help="ranking (default: relevance)")
+    s.add_argument("--channel", default="fleet",
+                   help="channel to post the digest in (default: fleet)")
+    s.add_argument("--from", dest="sender", required=True,
+                   help="sender agent name")
+    s.add_argument("--to", default="all",
+                   help="recipient agent, or 'all' (default all)")
+    s.add_argument("--title", help="message title (default: papers: <query>)")
+    s.set_defaults(func=chat_commands.cmd_papers)
+
     event = sub.add_parser("event", help="post/read adapter-neutral events")
     event_sub = event.add_subparsers(
         title="event commands",

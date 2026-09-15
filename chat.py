@@ -15,7 +15,7 @@ allocated under a filesystem lock (atomic `mkdir`) so two sessions can never cla
 the same number -- the exact race that produced duplicate "seq 11" files in the
 hand-rolled prototype.
 
-Commands: init | channels | roster | post | read | wait | peek | claim | lock | check | unlock | recover | recover-pending | task | state | compact | event | keygen | relay-in | relay-out | squawk-feed
+Commands: init | channels | roster | post | read | wait | peek | claim | lock | check | unlock | recover | recover-pending | task | state | compact | event | keygen | relay-in | relay-out | squawk-feed | papers
 Run `python chat.py <command> --help` for flags.
 """
 
@@ -23,9 +23,44 @@ from __future__ import annotations
 
 import sys
 
-from chat_core import *
-from chat_commands import *
-from chat_parser import *
+import chat_core
+import chat_commands
+import chat_parser
+from chat_core import AdapterEventError, AgentChatError, die, root_dir
+from chat_parser import build_parser
+
+# Facade: re-export the three modules' public names without star imports
+# (ruff 0.15.7 flags `from x import *` as F403 unconditionally, even with
+# __all__ defined). PEP 562 delegation keeps `chat.<name>`,
+# `from chat import <name>`, and `from chat import *` working exactly as
+# before. Verified: no name appears in more than one module __all__.
+_FACADE_MODULES = (chat_core, chat_commands, chat_parser)
+
+def _facade_all():
+    # Not a literal: ruff cannot verify __all__ entries statically, which is
+    # exactly right, since the re-exported names resolve lazily through
+    # __getattr__ below. getattr defaults keep this safe during the
+    # pre-existing circular import (chat_commands -> fleet_delta ->
+    # import chat); by the time anyone reads __all__, every module is fully
+    # initialized. Verified at runtime: 100 names, all resolvable.
+    names = ["main"]
+    for _mod in _FACADE_MODULES:
+        names.extend(getattr(_mod, "__all__", ()))
+    return names
+
+
+__all__ = _facade_all()
+
+
+def __getattr__(name: str):
+    for _mod in _FACADE_MODULES:
+        if name in getattr(_mod, "__all__", ()):
+            return getattr(_mod, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
 
 def _is_task_error(error: Exception) -> bool:
     try:
@@ -65,104 +100,3 @@ if __name__ == "__main__":
     main()
 
 
-__all__ = [
-    "root_dir",
-    "now_iso",
-    "slugify",
-    "_frontmatter_value",
-    "AgentChatError",
-    "EVENT_SCHEMA_VERSION",
-    "EVENT_TYPES",
-    "CAPABILITY_PRIMITIVES",
-    "STATUS_VALUES",
-    "AdapterEventError",
-    "_event_text",
-    "_event_timestamp",
-    "validate_adapter_event",
-    "make_capability_event",
-    "make_status_event",
-    "die",
-    "_check_safe_name",
-    "_TASK_MARKER_RE",
-    "channel_dir",
-    "require_channel",
-    "_seq_from_name",
-    "message_files",
-    "parse_frontmatter",
-    "is_relevant",
-    "_acquire_lock",
-    "_release_lock",
-    "_next_seq",
-    "cursor_path",
-    "read_cursor",
-    "write_cursor",
-    "max_seq",
-    "cmd_init",
-    "cmd_keygen",
-    "cmd_mark_ephemeral",
-    "cmd_gc",
-    "cmd_heartbeat",
-    "cmd_presence",
-    "cmd_react",
-    "cmd_gossip",
-    "cmd_suggest_role",
-    "cmd_suspect",
-    "cmd_channels",
-    "cmd_roster",
-    "_read_body",
-    "_resolve_reply_target",
-    "_dag_parents",
-    "_post_message",
-    "cmd_post",
-    "_relay_read_text",
-    "cmd_relay_in",
-    "cmd_relay_out",
-    "cmd_squawk_feed",
-    "_record_op",
-    "_print_message",
-    "_sender_cleared",
-    "cmd_digest",
-    "cmd_read",
-    "cmd_wait",
-    "cmd_peek",
-    "cmd_claim",
-    "_task_store",
-    "_lease_store",
-    "_path_lock_store",
-    "_state_store",
-    "cmd_state",
-    "cmd_compact",
-    "_event_body",
-    "cmd_event_post",
-    "cmd_event_read",
-    "cmd_lock",
-    "cmd_check",
-    "cmd_unlock",
-    "cmd_path_recover",
-    "cmd_path_recover_pending",
-    "_task_values",
-    "_task_actor",
-    "_task_owner",
-    "_print_task_result",
-    "cmd_task_create",
-    "cmd_task_list",
-    "cmd_task_show",
-    "cmd_task_update",
-    "_task_transition",
-    "cmd_task_done",
-    "cmd_task_block",
-    "cmd_task_release",
-    "cmd_task_claim",
-    "cmd_task_bid",
-    "cmd_task_bids",
-    "cmd_dag",
-    "cmd_thread",
-    "cmd_clocks",
-    "cmd_ops",
-    "cmd_task_renew",
-    "cmd_task_recover",
-    "cmd_task_recover_pending",
-    "_TaskArgumentParser",
-    "build_parser",
-    "main",
-]

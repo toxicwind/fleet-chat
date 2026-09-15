@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -27,7 +28,31 @@ import fleet_stigmergy
 import fleet_time
 import fleet_watch
 
-from chat_core import *
+from chat_core import (
+    AdapterEventError,
+    AgentChatError,
+    _TASK_MARKER_RE,
+    _acquire_lock,
+    _check_safe_name,
+    _frontmatter_value,
+    _next_seq,
+    _release_lock,
+    _seq_from_name,
+    channel_dir,
+    die,
+    is_relevant,
+    make_capability_event,
+    make_status_event,
+    max_seq,
+    message_files,
+    now_iso,
+    parse_frontmatter,
+    read_cursor,
+    require_channel,
+    slugify,
+    validate_adapter_event,
+    write_cursor,
+)
 
 def cmd_init(root: Path, a):
     d = channel_dir(root, a.channel)
@@ -1448,6 +1473,105 @@ def cmd_task_recover_pending(root: Path, a):
 
 
 
+
+PAPERS_CLI_DEFAULT = os.path.join(
+    os.path.expanduser("~"), "workspace", "skills",
+    "emergent-enrich", "bin", "papers.py",
+)
+
+
+def _papers_cli() -> str:
+    return os.environ.get("SQUAWK_PAPERS_CLI", PAPERS_CLI_DEFAULT)
+
+
+def _papers_digest_line(p: dict) -> str:
+    title = (p.get("title") or "untitled").strip()
+    authors = p.get("authors") or []
+    auth = ", ".join(authors[:3]) + (" et al." if len(authors) > 3 else "")
+    year = p.get("year") or "?"
+    legs = ",".join(p.get("sources") or [])
+    urls = p.get("urls") or {}
+    link = None
+    if p.get("arxiv_id"):
+        link = "https://arxiv.org/abs/" + str(p["arxiv_id"])
+    link = link or urls.get("url") or p.get("url")
+    cites = p.get("citation_count")
+    head = f"{title} ({year})" + (f" \u2014 {auth}" if auth else "")
+    meta = " | ".join(
+        b for b in (
+            f"legs: {legs}" if legs else "",
+            f"cites: {cites}" if cites else "",
+            link or "",
+        ) if b
+    )
+    summ = (p.get("summary") or p.get("tldr") or "").strip().replace("\n", " ")
+    if len(summ) > 220:
+        summ = summ[:217] + "..."
+    lines = [head]
+    if meta:
+        lines.append("  " + meta)
+    if summ:
+        lines.append("  > " + summ)
+    return "\n".join(lines)
+
+
+def cmd_papers(root: Path, a):
+    """Search papers (arXiv/alphaXiv legs first-class) and post a digest."""
+    cli = _papers_cli()
+    if not os.path.isfile(cli):
+        die(f"papers CLI not found: {cli} (set SQUAWK_PAPERS_CLI)")
+    cmd = [sys.executable, cli, "--format", "jsonl", "--no-audit",
+           "--max", str(a.max), "--timeout", str(a.timeout),
+           "--sort", a.sort]
+    if a.id:
+        cmd += ["--id", a.id]
+    elif a.query:
+        cmd += ["--query", a.query]
+    else:
+        die("papers: need --query or --id")
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=a.timeout + 30)
+    except subprocess.TimeoutExpired:
+        die(f"papers: router timed out after {a.timeout + 30}s")
+    papers, legs_ok, legs_bad = [], [], []
+    for line in (proc.stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if d.get("type") == "paper":
+            papers.append(d)
+        elif d.get("type") == "meta":
+            for leg in d.get("legs") or []:
+                (legs_ok if leg.get("ok") else legs_bad).append(leg.get("leg"))
+    q = a.id or a.query
+    if not papers:
+        body = (f"papers: no results for '{q}' "
+                f"(legs ok: {','.join(legs_ok) or 'none'}; "
+                f"failed: {','.join(legs_bad) or 'none'})")
+    else:
+        agreed = [p for p in papers if len(p.get("sources") or []) > 1]
+        bl = [f"papers: '{q}' \u2014 {len(papers)} result(s); "
+              f"legs ok: {','.join(legs_ok) or 'none'}"
+              + (f"; failed: {','.join(legs_bad)}" if legs_bad else "")]
+        if agreed:
+            bl.append(f"consensus (multi-leg agreement): {len(agreed)}")
+        for i, p in enumerate(papers, 1):
+            bl.append(f"\n{i}. " + _papers_digest_line(p))
+        bl.append("\ncredits_spent: false (free legs only)")
+        body = "\n".join(bl)
+    title = a.title or f"papers: {q}"
+    seq, fname = _post_message(
+        root, a.channel, body=body, sender=a.sender, to=a.to,
+        status="papers", title=title,
+        extra_frontmatter={"papers_query": q},
+    )
+    print(f"posted #{seq} -> {a.channel}/{fname} ({len(papers)} papers)")
+
 __all__ = [
     "cmd_init",
     "cmd_keygen",
@@ -1466,6 +1590,7 @@ __all__ = [
     "_dag_parents",
     "_post_message",
     "cmd_post",
+    "cmd_papers",
     "_relay_read_text",
     "cmd_relay_in",
     "cmd_relay_out",
