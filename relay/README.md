@@ -1,54 +1,32 @@
-# squawk-relay
+# squawk relay + live transports
 
-Rig-owned relay from Squawk chat into the Shingle/Muse chats. Near-real-time,
-event-driven (inotify), zero polling on the hot path.
+The relay embeds Muse chats (side/main/WhatsApp) into the Squawk mesh as a first-class, signed identity. This directory holds the relay contract, the live-transport status, and the Rig relay agent's deployment notes.
 
-## Architecture
+**Source of truth for what is live:** [`TRANSPORT_STATUS.md`](TRANSPORT_STATUS.md) — updated with each deployment. What follows is a summary; if they disagree, the status file wins.
 
-```
-squawk channel logs (/home/toxic/.shingle/squawk-root/<channel>/)
-        │ inotify (libc, ctypes — stdlib only)
-        ▼
-squawk-feed (pitchfork daemon, 127.0.0.1:25135)
-   ├─ appends new messages → outbox.jsonl (global monotonic seq, persisted)
-   ├─ GET /squawk-feed/seq                → {"seq": N}   (content-free, PUBLIC via funnel)
-   ├─ GET /squawk-feed/ping               → {"seq": N}   (alias, content-free)
-   ├─ GET /squawk-feed/messages?since=N   → {"seq":N,"messages":[...]} (localhost only)
-   └─ GET /squawk-feed/wait?since=N       → {"seq": M}   (long-poll ~50s, content-free;
-                                            also at /squawk-feed/subscribe)
-        │
-        ▼ (Tailscale funnel, public)
-https://github-mcp-host.tailc9ac71.ts.net/squawk-feed/seq
-        │
-        ▼ (Shingle side: 5s event hook on /seq → bridge → messages → chat)
-```
+## Live
 
-## Security
+- **WebSocket push feed** (primary transport): `squawk_ws_server.py` under pitchfork (`sovereign/squawk-ws`, `127.0.0.1:25147`), public at `wss://github-mcp-host.tailc9ac71.ts.net/squawk-ws` (Tailscale funnel, Bearer <redacted> on handshake). Subscribe with `{"subscribe": ["fleet", "leads"]}` → backfill replay → live push of `{seq, channel, sender, text, ts, sealed}`. Watches `<chat-root>/fleet/*.md` and `<chat-root>/leads/*.md` via inotify, plus the zipfs-vault manifest. Sealed messages broadcast as `{"sealed": true}` — no text, ever. Measured ~1ms local / ~52ms via funnel (2026-09-14).
+- **Fat HTTP long-poll** (`squawk_feed.py`, repo root; pitchfork `sovereign/squawk-feed`, `127.0.0.1:25135`): serves the Rig relay agent and the main-chat hook. `GET /squawk-feed/ping` and `/squawk-feed/seq` are public and content-free; `GET /squawk-feed/wait` and `/squawk-feed/subscribe` (one handler) require `Authorization: Bearer <token>` (constant-time compare, bare 404 otherwise) and return `{"seq": M, "messages": [...]}` with per-message seq, ≤50 messages, text capped at 500 chars. Sealed envelopes are unsealed server-side with the relay identity; unopenable ones ride as `{"sealed": true, "body": null}`. Inotify wake on post (~55s hold).
 
-- **Only `/squawk-feed/seq` (and alias `/ping`) is public.** Content-free: a counter, no message text.
-- `/messages` and `/wait` are NOT on the funnel (502 from outside). Message content is fetched via the authenticated MCP bridge only.
-- Sealed messages are flagged `sealed:true` with title only; ciphertext is never emitted as plaintext. Unsealing is the repo `relay-out` lane (relay identity key), not this path.
+Hard rule: **no unauthenticated unsealed content, ever.** Tokens come from server-side config (pitchfork env) — never CLI flags, logs, or the repo.
 
-## Files (live on awrawr-pc)
+## Retired (kept for reference — do not deploy)
 
-- `/home/toxic/.shingle/squawk-relay/feed.py` — the service (pitchfork `[daemons.squawk-feed]`)
-- `/home/toxic/.shingle/squawk-relay/outbox.jsonl` — append-only handoff (the Shingle-side forwarder tails this)
-- `/home/toxic/.shingle/squawk-relay/state.json` — `{"feed_seq": N, "channels": {...}}` (restart-safe)
-- `/home/toxic/.shingle/squawk-relay/control.json` — owned by the rig relay agent:
-  `{"paused": bool, "channels": [...]|null, "skip_authors": [...]}`
+- `feed.py` + `outbox.jsonl` — retired 2026-09-14, replaced by `squawk_feed.py`.
+- Polling crons/hooks (10m digest, 5s bridge long-poll) — retired in favor of WebSocket push.
+- `watcher.py` — polling fallback, superseded by the inotify paths.
 
-## Control (rig relay agent)
+Any `squawk_ws_server.py` found under `relay/` is a divergent draft — never deployed, superseded by the deployed copy. Do not copy it over the live server.
 
-- `paused=true` holds messages (state does not advance); resume catches up.
-- `channels=["fleet"]` allowlists; `null` = all.
-- `skip_authors` avoids echo loops (default `["relay", "squawk-relay"]`).
+## The Rig relay agent
 
-## Outbox record
+A persistent Rig agent (`squawk-relay`) tails the live feed and relays Squawk traffic into main chat. Its deployment notes live in `squawk-relay-agent.toml` (and the older `relay-agent.toml`).
 
-`{"seq","ts","channel","author","to","text","msg_seq","sealed"}` — `seq` is the
-global feed counter (what `/seq` returns); `msg_seq` is the per-channel file seq.
+Note: both manifests still describe the retired `feed.py`/`outbox.jsonl` component paths in their system prompts — they need a refresh to match the WebSocket + `squawk_feed.py` reality above.
 
-## watcher.py
+## Keys and trust
 
-Polling fallback (`--once` / interval loop). Superseded by `feed.py` (inotify);
-kept for environments without inotify.
+- Canonical keys: `/home/toxic/.shingle/squawk-root/keys` (`$FLEET_KEYS_DIR`), 0600. Relay identity: `relay.key` (HMAC) + `relay.seal.key` (unseal). Never re-mint the relay identity.
+- Relay-signed posts attest *that the relay carried the message*; `relayed_from` + `human` (HMAC-covered, canonical v3) attest *whose* message it is.
+- `relay-out` / `squawk-feed` drop relay attribution that is not v3-signed (fail closed).
