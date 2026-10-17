@@ -1,0 +1,1 @@
+{"name":"fleet-chat","scripts":{"cli":"bun run cli.ts","server":"bun run server.ts"},"type":"module","version":"0.1.0"}
