@@ -1,0 +1,8 @@
+# fleet-chat — autonomous rig task wiring (Phase-B).
+# bin/run = start fleet-chatd / CLI; bin/check = build + live status gate.
+
+[tasks]
+run = "./bin/run"
+check = "./bin/check"
+server = "bun run server.ts"
+cli = "bun run cli.ts"

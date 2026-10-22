@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# fleet-chat — first-class fleet chat server autonomous rig (bin/run).
+# Primary operation: run the fleet-chat server (fleet-chatd) for the agent fleet.
+#   bin/run             start the server on FLEET_CHAT_PORT (default :25122)
+#   bin/run cli ...     invoke the CLI instead (e.g. bin/run cli --help)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+cmd_bun="$(readlink -f "$(command -v bun 2>/dev/null || true)" 2>/dev/null || true)"
+for cand in /home/toxic/.bun/bin/bun "$cmd_bun" /usr/local/bin/bun /usr/bin/bun; do
+  [ -x "$cand" ] && { REAL_BUN="$cand"; break; }
+done
+[ -n "${REAL_BUN:-}" ] || { echo "FAIL: bun not found"; exit 1; }
+
+if [ "${1:-}" = "cli" ]; then
+    shift
+    exec "$REAL_BUN" run cli.ts "$@"
+fi
+
+echo "== fleet-chat run: starting fleet-chatd =="
+exec "$REAL_BUN" run server.ts

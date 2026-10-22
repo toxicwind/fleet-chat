@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# fleet-chat — first-class fleet chat server autonomous rig (bin/check).
+# Self-test gate (PASS / FAIL / WARN). Read-only:
+#   1. Source integrity: server.ts + cli.ts pass bun's no-bundle build (type/import).
+#   2. Live server status on :25122 (FLEET_CHAT_PORT) reported; down is a WARN
+#      (server starts on demand via bin/run, not a supervised estate daemon here).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "== fleet-chat check: start =="
+cmd_bun="$(readlink -f "$(command -v bun 2>/dev/null || true)" 2>/dev/null || true)"
+for cand in /home/toxic/.bun/bin/bun "$cmd_bun" /usr/local/bin/bun /usr/bin/bun; do
+  [ -x "$cand" ] && { REAL_BUN="$cand"; break; }
+done
+[ -n "${REAL_BUN:-}" ] || { echo "FAIL: bun not found"; exit 1; }
+
+echo "-- source build check (server.ts) --"
+if ! "$REAL_BUN" build --no-bundle server.ts >/dev/null 2>&1; then
+  echo "FAIL: server.ts does not build"; exit 1
+fi
+echo "OK: server.ts builds"
+
+echo "-- source build check (cli.ts) --"
+if ! "$REAL_BUN" build --no-bundle cli.ts >/dev/null 2>&1; then
+  echo "FAIL: cli.ts does not build"; exit 1
+fi
+echo "OK: cli.ts builds"
+
+echo "-- live server status :25122 --"
+port_open=no
+if timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/25122' 2>/dev/null; then
+  port_open=yes
+fi
+if [ "$port_open" = "yes" ]; then
+  echo "fleet-chatd ANSWERING on :25122"
+else
+  echo "WARN: fleet-chatd not currently listening on :25122 (start on demand via bin/run)"
+fi
+
+echo "== fleet-chat check: PASS =="
