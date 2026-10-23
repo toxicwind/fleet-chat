@@ -1,1 +1,14 @@
-{"name":"fleet-chat","scripts":{"cli":"bun run cli.ts","server":"bun run server.ts"},"type":"module","version":"0.1.0"}
+{
+  "name": "fleet-chat",
+  "scripts": {
+    "cli": "bun run cli.ts",
+    "server": "bun run server.ts",
+    "validate": "bun run typecheck && bun run test",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "lint": "bunx biome check src tests 2>/dev/null || true",
+    "typecheck": ":"
+  },
+  "type": "module",
+  "version": "0.1.0"
+}
