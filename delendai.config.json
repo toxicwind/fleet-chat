@@ -370,6 +370,7 @@
 			"options": {}
 		}
 	},
+	"validationMatrix": {"scopes": [{}]},
 	"development": {
 		"profile": "shared-checkout-merge",
 		"branches": {
