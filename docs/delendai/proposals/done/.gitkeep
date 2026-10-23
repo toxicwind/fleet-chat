@@ -1,0 +1,4 @@
+# Keeps done/ in git even when empty.
+# Required by the f00016 proposal state machine — proposals
+# in the 'done' status live here. Safe to delete once a
+# real proposal lands in this folder.

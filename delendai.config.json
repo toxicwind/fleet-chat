@@ -1,0 +1,380 @@
+{
+	"$schema": "https://unpkg.com/@delendai/core/schema/delendai.config.schema.json",
+	"cacheDir": ".cache/delendai",
+	"docsDir": "docs/delendai",
+	"plugins": {
+		// Adaptive optimizer: cheaply rank model, plugin-set and prompt candidates with explicit budget and consent guards.
+		// Options: docs/delendai/plugins/auto-generated/adaptive-optimizer.md
+		"adaptive-optimizer": {
+			"options": {
+				"maxBytes": 2000
+			}
+		},
+		// Multi-model audit planning + consolidation; f00139 adds self_audit dogfood loop.
+		// Options: docs/delendai/plugins/auto-generated/audit.md
+		"audit": {
+			"options": {
+				"topActions": 5,
+				"layers": []
+			}
+		},
+		// Zero-config multi-agent routing (cost↔quality dial, auto_recommend, escalation).
+		// Options: docs/delendai/plugins/auto-generated/auto-agent-selector.md
+		"auto-agent-selector": {
+			"options": {}
+		},
+		// Recommends the best plugin set for this project from its signals (manifest, files, git, task).
+		// Options: docs/delendai/plugins/auto-generated/auto-plugin-selector.md
+		"auto-plugin-selector": {
+			"options": {}
+		},
+		// Commit-authority plugin: configurable identity, cadence and audit-trail policy wrapping the git plugin primitives. Off by default — opt in via plugins.commit-policy.options.
+		// Options: docs/delendai/plugins/auto-generated/commit-policy.md
+		"commit-policy": {
+			"options": {}
+		},
+		// Task-completion notifier: records an agent declaring its original task done + reviewed and pushes a notification.
+		// Options: docs/delendai/plugins/auto-generated/completion.md
+		"completion": {
+			"options": {}
+		},
+		// Container inspection + lint (docker ps/images, k8s, Dockerfile rules).
+		// Options: docs/delendai/plugins/auto-generated/container.md
+		"container": {
+			"options": {}
+		},
+		// Repo file-convention enforcement (interface, constant, service, tool …).
+		// Options: docs/delendai/plugins/auto-generated/conventions.md
+		"conventions": {
+			"options": {}
+		},
+		// Compact task-oriented change context orchestration across diff, symbols, tests, docs and conventions.
+		// Options: docs/delendai/plugins/auto-generated/context-for-change.md
+		"context-for-change": {
+			"options": {}
+		},
+		// Dependency inventory + offline health (deps_list, deps_check, deps_audit, deps_licenses, deps_tree).
+		// Options: docs/delendai/plugins/auto-generated/deps.md
+		"deps": {
+			"options": {
+				"manifest": "package.json",
+				"allowNetwork": false,
+				"allowWrite": false
+			}
+		},
+		// Diagram generator (mermaid, dot) from code structure.
+		// Options: docs/delendai/plugins/auto-generated/diagram.md
+		"diagram": {
+			"options": {}
+		},
+		// Doc generation, search, and rendered catalog.
+		// Options: docs/delendai/plugins/auto-generated/docs.md
+		"docs": {
+			"options": {}
+		},
+		// Environment config validation (.env check + schema + env_explains).
+		// Options: docs/delendai/plugins/auto-generated/env.md
+		"env": {
+			"options": {}
+		},
+		// Forge (GitHub/GitLab) wrappers — PRs, CI, issues.
+		// Options: docs/delendai/plugins/auto-generated/forge.md
+		"forge": {
+			"options": {}
+		},
+		// Git wrappers (PR list/view, diff, changelog, extended).
+		// Options: docs/delendai/plugins/auto-generated/git.md
+		"git": {
+			"options": {}
+		},
+		// i18n key/interpolation validation across locale JSON files.
+		// Options: docs/delendai/plugins/auto-generated/i18n.md
+		"i18n": {
+			"options": {}
+		},
+		// Bounded impact analysis and test selection across changed symbols, dependents and related specs.
+		// Options: docs/delendai/plugins/auto-generated/impact-analysis.md
+		"impact-analysis": {
+			"options": {}
+		},
+		// Compact project-health aggregator: cheap summary first, lazy domain details on demand.
+		// Options: docs/delendai/plugins/auto-generated/project-health.md
+		"project-health": {
+			"options": {
+				"maxBytes": 2000
+			}
+		},
+		// Unified quality-policy surface: cheap tests, conventions, lint, types and coverage guidance without running heavy quality commands.
+		// Options: docs/delendai/plugins/auto-generated/quality-policy.md
+		"quality-policy": {
+			"options": {
+				"maxBytes": 2000
+			}
+		},
+		// Markdown link checker.
+		// Options: docs/delendai/plugins/auto-generated/link-check.md
+		"link-check": {
+			"options": {}
+		},
+		// Structured logs reader (tail, query, redact).
+		// Options: docs/delendai/plugins/auto-generated/logs.md
+		"logs": {
+			"options": {
+				"retentionCount": 10
+			}
+		},
+		// Persistent memory store (BM25 + recall, save, search).
+		// Options: docs/delendai/plugins/auto-generated/memory.md
+		"memory": {
+			"options": {
+				"bm25K1": 1.5,
+				"bm25B": 0.75,
+				"titleWeight": 2,
+				"maxNotes": 1000
+			}
+		},
+		// Notification + lock-await primitives.
+		// Options: docs/delendai/plugins/auto-generated/notification.md
+		"notification": {
+			"options": {
+				"intervalMs": 2000,
+				"heartbeatMs": 30000
+			}
+		},
+		// Orchestrator-runner runtime utilities.
+		// Options: docs/delendai/plugins/auto-generated/orchestrator-runner.md
+		"orchestrator-runner": {
+			"options": {}
+		},
+		// Workflow policy plugin: single / linear / swarm / auto modes with token budgets, iteration caps, and mid-task subagent rotation.
+		// Options: docs/delendai/plugins/auto-generated/agent-orchestrator.md
+		"agent-orchestrator": {
+			"options": {}
+		},
+		// Performance bench/bundle/profile tools.
+		// Options: docs/delendai/plugins/auto-generated/perf.md
+		"perf": {
+			"options": {}
+		},
+		// Proposals workflow + multi-agent (swarm) orchestration.
+		// Options: docs/delendai/plugins/auto-generated/proposals.md
+		"proposals": {
+			"options": {
+				"orchestration": {
+					"delegateAfterToolCalls": 3
+				}
+			}
+		},
+		// Versioned project KPI snapshots and observability views across health, usage, economics and delivery.
+		// Options: docs/delendai/plugins/auto-generated/project-kpis.md
+		"project-kpis": {
+			"options": {}
+		},
+		// Quality gates: coverage, complexity, lint, type-check orchestration.
+		// Options: docs/delendai/plugins/auto-generated/quality.md
+		"quality": {
+			"options": {}
+		},
+		// Lint/type rules engine (frameworks, dogmas, presets).
+		// Options: docs/delendai/plugins/auto-generated/rules.md
+		"rules": {
+			"options": {}
+		},
+		// Code search (semantic + symbol + references).
+		// Options: docs/delendai/plugins/auto-generated/search.md
+		"search": {
+			"options": {}
+		},
+		// Security audit (CVEs, SAST, secrets, env).
+		// Options: docs/delendai/plugins/auto-generated/security.md
+		"security": {
+			"options": {}
+		},
+		// Status marker + closure canonical line.
+		// Options: docs/delendai/plugins/auto-generated/status-marker.md
+		"status-marker": {
+			"options": {}
+		},
+		// Tech-debt scanner (TODO/FIXME/HACK inventory).
+		// Options: docs/delendai/plugins/auto-generated/tech-debt.md
+		"tech-debt": {
+			"options": {}
+		},
+		// Test-file convention enforcement (spec path, mock style, forbidden patterns).
+		// Options: docs/delendai/plugins/auto-generated/test-convention.md
+		"test-convention": {
+			"options": {}
+		},
+		// Test policy mode (TDD, tests-after, free, none).
+		// Options: docs/delendai/plugins/auto-generated/test-policy.md
+		"test-policy": {
+			"options": {}
+		},
+		// Per-token/per-call usage tracking (spend, budget).
+		// Options: docs/delendai/plugins/auto-generated/usage-tracking.md
+		"usage-tracking": {
+			"options": {}
+		},
+		// Automatic delendai error reporting, on by default and announced at every start: opens de-duplicated GitHub issues for delendai-internal failures only; one config line turns it off.
+		// Options: docs/delendai/plugins/auto-generated/error-reporting.md
+		"error-reporting": {
+			"options": {
+				"enabled": true
+			}
+		},
+		// REST/GraphQL API surface for delendai plugins.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/api.md
+		"api": {
+			"enabled": false,
+			"options": {}
+		},
+		// Orchestrates implementation work generated by project-agnostic audit plan proposals.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/audit-orchestrator.md
+		"audit-orchestrator": {
+			"enabled": false,
+			"options": {}
+		},
+		// Headless browser automation tools.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/browser.md
+		"browser": {
+			"enabled": false,
+			"options": {}
+		},
+		// Cache-eviction rules and lifecycle for plugin scratch dirs.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/cache.md
+		"cache": {
+			"enabled": false,
+			"options": {}
+		},
+		// Conventional-commits changelog + release plan generator.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/changelog.md
+		"changelog": {
+			"enabled": false,
+			"options": {}
+		},
+		// Database schema/introspection tools (read-only, offline).
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/database.md
+		"database": {
+			"enabled": false,
+			"options": {}
+		},
+		// Execution environments: one contract and registry for running commands locally, in Docker, Docker Compose, over SSH or inside an existing container.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/execution-env.md
+		"execution-env": {
+			"enabled": false,
+			"options": {}
+		},
+		// Compose third-party MCP servers through the catalog + human ack.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/external-mcps.md
+		"external-mcps": {
+			"enabled": false,
+			"options": {}
+		},
+		// Resolves what the project’s installed framework version allows, recommends and forbids, before an agent writes code.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/framework-knowledge.md
+		"framework-knowledge": {
+			"enabled": false,
+			"options": {}
+		},
+		// GitHub read-only provider context, HTTP client and remote resource tools.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/github.md
+		"github": {
+			"enabled": false,
+			"options": {}
+		},
+		// GitLab read-only provider context, HTTP client and resource tools.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/gitlab.md
+		"gitlab": {
+			"enabled": false,
+			"options": {}
+		},
+		// Issue tracker (GitHub) integration — list/fetch/analyze/ingest/resolve.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/issues.md
+		"issues": {
+			"enabled": false,
+			"options": {}
+		},
+		// INTERNAL-ONLY issue triage bot for the delendai repository: reads GitHub issues, classifies them mechanically, drafts fix proposals and replies automatically with a machine-disclosure notice. Never published to npm.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/issues-triage.md
+		"issues-triage": {
+			"enabled": false,
+			"options": {}
+		},
+		// Observability surface (metrics, errors, telemetry).
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/observability.md
+		"observability": {
+			"enabled": false,
+			"options": {}
+		},
+		// Prompt-eval harness (golden prompts, scoring).
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/prompt-eval.md
+		"prompt-eval": {
+			"enabled": false,
+			"options": {}
+		},
+		// Project-aware MCP prompts (explain-this-code, write-tests-for, review-this-diff, etc.).
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/prompts-pack.md
+		"prompts-pack": {
+			"enabled": false,
+			"options": {}
+		},
+		// Refactor primitives (symbols, definition, references, rename, codemod).
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/refactor.md
+		"refactor": {
+			"enabled": false,
+			"options": {}
+		},
+		// Shared remote-provider foundation: validated config, injectable HTTP, normalized errors.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/remote-provider-core.md
+		"remote-provider-core": {
+			"enabled": false,
+			"options": {}
+		},
+		// Per-project learning store: accumulates observations the runtime already writes and answers what this project has taught us.
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/self-learning.md
+		"self-learning": {
+			"enabled": false,
+			"options": {}
+		},
+		// Curated skill pack (debugging, perf, pr-review, security, incident, migration).
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/skills-pack.md
+		"skills-pack": {
+			"enabled": false,
+			"options": {}
+		},
+		// Web fetch (allow-listed URLs only).
+		// Available, but not enabled by the dogfood preset.
+		// Options: docs/delendai/plugins/auto-generated/web-fetch.md
+		"web-fetch": {
+			"enabled": false,
+			"options": {}
+		}
+	},
+	"development": {
+		"profile": "shared-checkout-merge",
+		"branches": {
+			"integration": "main",
+			"release": "main"
+		}
+	}
+}

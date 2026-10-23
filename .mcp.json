@@ -1,0 +1,18 @@
+{
+	"mcpServers": {
+		"DelendAI:fleet-chat": {
+			"type": "stdio",
+			"command": "bunx",
+			"args": [
+				"--package",
+				"@delendai/cli",
+				"delendai",
+				"__serve",
+				"--workspace",
+				".",
+				"--name",
+				"DelendAI:fleet-chat"
+			]
+		}
+	}
+}

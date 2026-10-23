@@ -1,0 +1,111 @@
+{
+	"generatedAt": "2026-07-26T08:00:00.000Z",
+	"skills": [
+		{
+			"id": "delendai-plugin-authoring",
+			"version": "1.0.0",
+			"minCoreVersion": "0.1.0",
+			"summary": "Use when adding or changing an delendai plugin so tools, schemas, state, path containment, and durability rules stay correct.",
+			"bodyPath": "docs/delendai/skills/delendai-plugin-authoring/SKILL.md",
+			"tags": [
+				"plugin-authoring",
+				"contract",
+				"core"
+			],
+			"appliesTo": [
+				"@delendai/*"
+			]
+		},
+		{
+			"id": "delendai-failure-modes",
+			"version": "1.0.0",
+			"minCoreVersion": "0.1.0",
+			"summary": "Use when a tool returns ok:false or a swarm stalls to recover from lock conflicts, corruption, state drift, policy blocks, or timeouts.",
+			"bodyPath": "docs/delendai/skills/delendai-failure-modes/SKILL.md",
+			"tags": [
+				"failure-modes",
+				"recovery",
+				"swarm"
+			],
+			"appliesTo": [
+				"@delendai/*"
+			]
+		},
+		{
+			"id": "delendai-operator",
+			"version": "1.0.0",
+			"minCoreVersion": "0.1.0",
+			"summary": "Use at session start to call overview first, read recommendedNextAction, and choose the right preset before touching plugin-specific tools.",
+			"bodyPath": "docs/delendai/skills/delendai-operator/SKILL.md",
+			"tags": [
+				"operator",
+				"orientation",
+				"presets"
+			],
+			"appliesTo": [
+				"@delendai/*"
+			]
+		},
+		{
+			"id": "delendai-token-budget-playbook",
+			"version": "1.0.0",
+			"minCoreVersion": "0.1.0",
+			"summary": "Use before verbose tools or when context grows too fast to keep sessions compact through compact calls, delegation, and metrics-aware discipline.",
+			"bodyPath": "docs/delendai/skills/delendai-token-budget-playbook/SKILL.md",
+			"tags": [
+				"metrics",
+				"token-budget",
+				"compact"
+			],
+			"appliesTo": [
+				"@delendai/*"
+			]
+		},
+		{
+			"id": "delendai-conventional-commits-and-release",
+			"version": "1.0.0",
+			"minCoreVersion": "0.1.0",
+			"summary": "Use before release-facing commits or bun run release so commit type, derived semver bump, and publish flow stay aligned with automation.",
+			"bodyPath": "docs/delendai/skills/delendai-conventional-commits-and-release/SKILL.md",
+			"tags": [
+				"release",
+				"conventional-commits",
+				"versioning"
+			],
+			"appliesTo": [
+				"@delendai/core"
+			]
+		},
+		{
+			"id": "delendai-token-budget-discipline",
+			"version": "1.0.0",
+			"minCoreVersion": "0.1.0",
+			"summary": "Use as the pointer to the canonical token-budget playbook whenever you need the current guidance for keeping sessions compact.",
+			"bodyPath": "docs/delendai/skills/delendai-token-budget-discipline/SKILL.md",
+			"tags": [
+				"token-budget",
+				"compact",
+				"delegation"
+			],
+			"appliesTo": [
+				"@delendai/core"
+			]
+		},
+		{
+			"id": "delendai-error-collection",
+			"version": "1.0.0",
+			"minCoreVersion": "0.1.0",
+			"summary": "Use when adding error capture to a plugin handler or writing a custom IErrorSink — withErrorCollection vs direct record, sink contract, privacy guarantee, autoReport opt-in.",
+			"bodyPath": "docs/delendai/skills/delendai-error-collection/SKILL.md",
+			"tags": [
+				"error-collection",
+				"sink",
+				"redaction",
+				"privacy"
+			],
+			"appliesTo": [
+				"@delendai/*"
+			]
+		}
+	]
+}
