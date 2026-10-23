@@ -370,7 +370,7 @@
 			"options": {}
 		}
 	},
-	"validationMatrix": {"scopes": [{}]},
+	"validationMatrix": {"validate": "bun run validate"},
 	"development": {
 		"profile": "shared-checkout-merge",
 		"branches": {

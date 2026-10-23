@@ -3,6 +3,7 @@ $schema: 'https://moonrepo.dev/schemas/project.json'
 # fleet-chat — ranch component (Greek-named where descriptive).
 language: 'typescript'
 stack: 'backend'
+type: 'library'
 tags:
   - 'ranch'
   - 'component'
